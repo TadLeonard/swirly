@@ -27,7 +27,7 @@ def hsl_filter(h=(), s=(), l=()):
     if s:
         s = _valid_s(*s)
     if l:
-        s = _valid_l(*l)
+        l = _valid_l(*l)
     if any(len(p) not in (0, 2) for p in (h, s, l)):
         raise ValueError("HSL filters can only be tuples like (min, max)")
     return _props(h, s, l)
@@ -58,14 +58,17 @@ def get_channel(img, hsl):
     """Returns row indices for which the HSL filter constraints are met"""
     idx_select = np.ones(img.shape[0], dtype=bool)  # no "rows" selected initially
     avg_husl = get_avg_husl(img)
+    print(avg_husl)
+    print(hsl)
     for prop_idx, prop in enumerate(hsl):
         if not prop:
             continue
         pmin, pmax = prop
         avg = avg_husl[:, prop_idx]
-        idx_select[avg < pmin] = 0
-        print(avg[0], pmax, avg[0] > pmax)
-        idx_select[avg > pmax] = 0
+        # add/subtract 0.1 for convenient comparison of numpy arrays of floats
+        # i.e. we want 100 to be not < 100.0000000000023
+        idx_select[avg < (pmin + 0.1)] = 0
+        idx_select[avg > (pmax - 0.1)] = 0
     return idx_select
 
 
