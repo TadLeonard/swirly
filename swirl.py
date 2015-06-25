@@ -27,13 +27,27 @@ def hsl_filter(h=(), s=(), l=()):
     return _props(h, s, l)
 
 
-#@profile
-def get_channel(img, hsl):
-    """Returns indices for which the HSL filter constraints are met"""
-    idx_select = np.zeros(img.shape[0])  # no "rows" selected initially
+@profile
+def get_avg_husl(img):
+    """Returns average HUSL values for each row of an image"""
     avg_rgb = np.average(img, axis=1)
     avg_rgb /= 255.0
-    avg_husl = np.array(list(starmap(rgb_to_husl, avg_rgb)))
+    return np.array(list(starmap(rgb_to_husl, avg_rgb)))
+    
+
+@profile
+def get_channel(img, hsl):
+    """Returns row indices for which the HSL filter constraints are met"""
+    idx_select = np.ones(img.shape[0], dtype=bool)  # no "rows" selected initially
+    avg_husl = get_avg_husl(img)
+    for prop_idx, prop in enumerate(hsl):
+        if not prop:
+            continue
+        pmin, pmax = prop
+        avg = avg_husl[:, prop_idx]
+        idx_select[avg < pmin] = 0
+        idx_select[avg > pmax] = 0
+    return idx_select
 
 
 def move(img_pixels, travel):
