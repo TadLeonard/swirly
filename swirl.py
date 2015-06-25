@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-
 import sys
 import random
 from collections import namedtuple
@@ -21,7 +20,7 @@ def hsl_filter(h=(), s=(), l=()):
     'channels' of a certain hue, saturation, and/or lightness in an image.
     If the user wants to filter for light rows/columns of pixels, they might
     use `hsl_filter(l=[90.5, 99.0])."""
-    h, s, l = [tuple(sorted(p)) for p in [h, s, l]]
+    h, s, l = [tuple(p) for p in [h, s, l]]
     if h:
         h = _valid_h(*h)
     if s:
