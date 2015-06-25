@@ -22,14 +22,32 @@ def hsl_filter(h=(), s=(), l=()):
     If the user wants to filter for light rows/columns of pixels, they might
     use `hsl_filter(l=[90.5, 99.0])."""
     h, s, l = [tuple(sorted(p)) for p in [h, s, l]]
+    if h:
+        h = _valid_h(*h)
+    if s:
+        s = _valid_s(*s)
+    if l:
+        s = _valid_l(*l)
     if any(len(p) not in (0, 2) for p in (h, s, l)):
         raise ValueError("HSL filters can only be tuples like (min, max)")
     return _props(h, s, l)
 
 
-@profile
+def _valid_h(hmin, hmax):
+    return (max(hmin, 0), max(hmax, 0))
+
+
+def _valid_s(smin, smax):
+    return (min(max(smin, 0), 100),
+            min(max(smax, 0), 100))
+
+
+def _valid_l(lmin, lmax):
+    return (min(max(lmin, 0), 100),
+            min(max(lmax, 0), 100))
+
+
 def get_avg_husl(img):
-    """Returns average HUSL values for each row of an image"""
     avg_rgb = np.average(img, axis=1)
     avg_rgb /= 255.0
     return np.array(list(starmap(rgb_to_husl, avg_rgb)))
@@ -46,6 +64,7 @@ def get_channel(img, hsl):
         pmin, pmax = prop
         avg = avg_husl[:, prop_idx]
         idx_select[avg < pmin] = 0
+        print(avg[0], pmax, avg[0] > pmax)
         idx_select[avg > pmax] = 0
     return idx_select
 
