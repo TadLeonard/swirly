@@ -53,13 +53,11 @@ def get_avg_husl(img):
     return np.array(list(starmap(rgb_to_husl, avg_rgb)))
     
 
-@profile
+#@profile
 def get_channel(img, hsl):
     """Returns row indices for which the HSL filter constraints are met"""
     idx_select = np.ones(img.shape[0], dtype=bool)  # no "rows" selected initially
     avg_husl = get_avg_husl(img)
-    print(avg_husl)
-    print(hsl)
     for prop_idx, prop in enumerate(hsl):
         if not prop:
             continue
@@ -67,8 +65,8 @@ def get_channel(img, hsl):
         avg = avg_husl[:, prop_idx]
         # add/subtract 0.1 for convenient comparison of numpy arrays of floats
         # i.e. we want 100 to be not < 100.0000000000023
-        idx_select[avg < (pmin + 0.1)] = 0
-        idx_select[avg > (pmax - 0.1)] = 0
+        idx_select[avg < (pmin - 0.1)] = 0
+        idx_select[avg > (pmax + 0.1)] = 0
     return idx_select
 
 
