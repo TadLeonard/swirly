@@ -29,7 +29,7 @@ def hsl_filter(h=(), s=(), l=()):
 
 #@profile
 def get_channel(img, hsl):
-    """Returns indexes for which the HSL filter constraints are met"""
+    """Returns indices for which the HSL filter constraints are met"""
     idx_select = np.zeros(img.shape[0])  # no "rows" selected initially
     avg_rgb = np.average(img, axis=1)
     avg_rgb /= 255.0
@@ -42,7 +42,7 @@ def move(img_pixels, travel):
     the first pixels."""
     # NOTE: This copy is needed. Doing a backwards slice assignment is a good
     # workaround for an in place shift (numpy.roll creates a copy!), but it
-    # is a true hack. Backwards slice assignment will work with c array
+    # is a real hack. Backwards slice assignment will work with c array
     # ordering, for example, but will break for Fortran style arrays.
     tail = img_pixels[-travel:].copy()  # pixel array wraps around
     img_pixels[travel:] = img_pixels[:-travel]  # move bulk of pixels
