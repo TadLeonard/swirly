@@ -13,6 +13,7 @@ def green_img():
     a[:] = [0, 255, 0]
     return a
  
+
 def green_channel(*filter_args, **filter_kwargs):
     i = green_img()
     i[50, :] = [0, 0, 0]  # black horizontal stripe
