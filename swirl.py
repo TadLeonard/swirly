@@ -79,25 +79,44 @@ def move(img, travel):
     # workaround for an in place shift (numpy.roll creates a copy!), but it
     # is a real hack. Backwards slice assignment will work with c array
     # ordering, for example, but will break for Fortran style arrays.
+    if travel == 0:
+        return
+    elif travel < 0:
+        img = img[::, ::-1]
     tail = img[-travel:].copy()  # pixel array wraps around
     img[travel:] = img[:-travel]  # move bulk of pixels
     img[:travel] = tail  # move the saved `tail` into vacated space
 
 
-def mover(hsl, pattern):
-    for travel in pattern:
-        average
+
+class FilterEffect:
+
+    def __init__(self, hsl_filter, pattern):
+        self.hsl_filter = hsl_filter
+        self.pattern = pattern
+        self.iteration = 0
+
+    def move(self, img, time=0):
+        props = next(self.pattern)
+        if props.vertical:
+            img = img.swapaxes(0, 1)
+        if props.inverted:
+            img = img[::, ::-1]
+        move(img, props.travel) 
 
 
 def _move_random(img):
     for row in img:
-        move(row, random.choice(list(range(1, 5))))
+        move(row, random.choice(list(range(-2, 3))))
     return img
 
 
-def animate(img, make_frame, duration):
-    animation = VideoClip(make_frame, duration=duration)
+def animate_gif(animation):
     animation.write_gif("bloop.gif", fps=24, opt="OptimizePlus")
+
+
+def animate_mp4(animation):
+    animation.write_videofile("bloop.mp4", fps=24)
 
 
 def _read_img(path):
@@ -106,10 +125,10 @@ def _read_img(path):
 
 if __name__ == "__main__":
     img = _read_img(sys.argv[1])
-    get_channel(img, hsl_filter)
 
     def rand_move(t):
         return _move_random(img)
     
-    animate(img, rand_move, duration=3)
+    animation = VideoClip(rand_move, duration=3)
+    animate_mp4(animation)
 
