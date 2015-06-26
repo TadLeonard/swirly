@@ -1,4 +1,3 @@
-
 import imread
 import numpy as np
 
@@ -14,24 +13,24 @@ def green_img():
     a[:] = [0, 255, 0]
     return a
  
-
-def test_get_channel_hue():
+def green_channel(*filter_args, **filter_kwargs):
     i = green_img()
     i[50, :] = [0, 0, 0]  # black horizontal stripe
     i[:, 50] = [0, 0, 0]  # black vertical stripe
-    hsl_green = swirl.hsl_filter(h=(110, 130))
-    c = swirl.get_channel(i, hsl_green)
+    filter_hsl = swirl.hsl_filter(*filter_args, **filter_kwargs)
+    avg_husl = swirl.get_avg_husl(i)
+    return swirl.get_channel(i, filter_hsl, avg_husl)
+
+
+def test_get_channel_hue():
+    c = green_channel(h=(110, 130))
     assert not c[50]
     assert np.all(c[:50])
     assert np.all(c[51:]) 
 
 
 def test_get_channel_lightness():
-    i = green_img()
-    i[50, :] = [0, 0, 0]  # black horizontal stripe
-    i[:, 50] = [0, 0, 0]  # black vertical stripe
-    hsl_green = swirl.hsl_filter(l=(85, 89))
-    c = swirl.get_channel(i, hsl_green)
+    c = green_channel(l=(85, 89))
     assert not c[50]
     assert np.all(c[:50])
     assert np.all(c[51:]) 
@@ -39,11 +38,7 @@ def test_get_channel_lightness():
 
 def test_get_channel_all():
     """Test a filter with all three properties set"""
-    i = green_img()
-    i[50, :] = [0, 0, 0]  # black horizontal stripe
-    i[:, 50] = [0, 0, 0]  # black vertical stripe
-    hsl_green = swirl.hsl_filter((110, 130), (99, 100), (85, 89))
-    c = swirl.get_channel(i, hsl_green)
+    c = green_channel((110, 130), (99, 100), (85, 89))
     assert not c[50]
     assert np.all(c[:50])
     assert np.all(c[51:]) 
@@ -52,11 +47,7 @@ def test_get_channel_all():
 def test_get_channel_one_broken():
     """If ONE of the three HSL properties is off, the filter should
     not select the row"""
-    i = green_img()
-    i[50, :] = [0, 0, 0]  # black horizontal stripe
-    i[:, 50] = [0, 0, 0]  # black vertical stripe
-    hsl_green = swirl.hsl_filter((110, 130), (48, 52), (85, 86))  # L is wrong
-    c = swirl.get_channel(i, hsl_green)
+    c = green_channel((110, 130), (48, 52), (85, 86))  # L is wrong
     assert not c[50]
     assert not np.all(c[:50])
     assert not np.all(c[51:]) 
