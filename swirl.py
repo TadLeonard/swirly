@@ -20,15 +20,20 @@ def hsl_filter(h=(), s=(), l=()):
     'channels' of a certain hue, saturation, and/or lightness in an image.
     If the user wants to filter for light rows/columns of pixels, they might
     use `hsl_filter(l=[90.5, 99.0])."""
-    h, s, l = [tuple(p) for p in [h, s, l]]
+    h, s, l = (tuple(p) for p in [h, s, l])  # let's make them all tuples
+
+    # let's make sure the user has specified (min, max) for HSL
+    if any(len(p) not in (0, 2) for p in (h, s, l)):
+        raise ValueError("HSL filters can only be tuples like (min, max)")
+
+    # let's make sure min, max values fit within their appropriate range
     if h:
         h = _valid_h(*h)
     if s:
         s = _valid_s(*s)
     if l:
         l = _valid_l(*l)
-    if any(len(p) not in (0, 2) for p in (h, s, l)):
-        raise ValueError("HSL filters can only be tuples like (min, max)")
+
     return _props(h, s, l)
 
 
@@ -41,9 +46,7 @@ def _valid_s(smin, smax):
             min(max(smax, 0), 100))
 
 
-def _valid_l(lmin, lmax):
-    return (min(max(lmin, 0), 100),
-            min(max(lmax, 0), 100))
+_valid_l = _valid_s  # saturation has the same range as lightness
 
 
 def get_avg_husl(img):
@@ -53,11 +56,10 @@ def get_avg_husl(img):
     
 
 #@profile
-def get_channel(img, hsl):
+def get_channel(img, filter_hsl, avg_husl):
     """Returns row indices for which the HSL filter constraints are met"""
     idx_select = np.ones(img.shape[0], dtype=bool)  # no "rows" selected initially
-    avg_husl = get_avg_husl(img)
-    for prop_idx, prop in enumerate(hsl):
+    for prop_idx, prop in enumerate(filter_hsl):
         if not prop:
             continue
         pmin, pmax = prop
@@ -69,17 +71,22 @@ def get_channel(img, hsl):
     return idx_select
 
 
-def move(img_pixels, travel):
-    """Shift `img_pixels` a distance of `travel` in the positive direction.
+def move(img, travel):
+    """Shift `img` a distance of `travel` in the positive direction.
     The pixel array wraps around, so the last pixels will end up being
     the first pixels."""
     # NOTE: This copy is needed. Doing a backwards slice assignment is a good
     # workaround for an in place shift (numpy.roll creates a copy!), but it
     # is a real hack. Backwards slice assignment will work with c array
     # ordering, for example, but will break for Fortran style arrays.
-    tail = img_pixels[-travel:].copy()  # pixel array wraps around
-    img_pixels[travel:] = img_pixels[:-travel]  # move bulk of pixels
-    img_pixels[:travel] = tail  # move the saved `tail` into vacated space
+    tail = img[-travel:].copy()  # pixel array wraps around
+    img[travel:] = img[:-travel]  # move bulk of pixels
+    img[:travel] = tail  # move the saved `tail` into vacated space
+
+
+def mover(hsl, pattern):
+    for travel in pattern:
+        average
 
 
 def _move_random(img):
