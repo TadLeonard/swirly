@@ -13,6 +13,11 @@ from moviepy.editor import VideoClip
 from husl import rgb_to_husl
 
 
+
+###################
+# Filtering pixels
+
+
 _props = namedtuple("channel", "h s l")
 
 
@@ -72,6 +77,14 @@ def get_channel(img, filter_hsl, avg_husl):
     return idx_select
 
 
+################
+# Moving pixels
+
+
+VERTICAL = "vertical"
+HORIZONTAL = "horizontal"
+
+
 def move(img, travel):
     """Shift `img` a distance of `travel` in the positive direction.
     The pixel array wraps around, so the last pixels will end up being
@@ -87,7 +100,6 @@ def move(img, travel):
     tail = img[-travel:].copy()  # pixel array wraps around
     img[travel:] = img[:-travel]  # move bulk of pixels
     img[:travel] = tail  # move the saved `tail` into vacated space
-
 
 
 class FilterEffect:
@@ -107,7 +119,14 @@ class FilterEffect:
         pass
 
 
-def wave_pattern(length, mag_coeff=4, period=50, offset=0):
+
+def rand_direction():
+    choices = (VERTICAL, HORIZONTAL)
+    while True:
+        yield random.choice(choices)
+
+
+def wave_travel(length, mag_coeff=4, period=50, offset=0):
     i = 0
     while True:
         i += 0.1
@@ -115,14 +134,14 @@ def wave_pattern(length, mag_coeff=4, period=50, offset=0):
         travel = int(round(travel))
         travel += offset
         prev = travel
-        yield i, travel
+        yield travel
         
 
-def _move_random(img):
-    for row in img:
-        move(row, random.choice(list(range(-2, 7))))
-    return img
-
+def rand_travel(lo, hi):
+    choices = list(range(lo, hi))
+    while True:
+        yield random.choices(choices)
+    
 
 def animate_gif(animation):
     animation.write_gif("bloop.gif", fps=24, opt="OptimizePlus")
@@ -140,10 +159,10 @@ if __name__ == "__main__":
     img = read_img(sys.argv[1])
 
     nrows = img.shape[0]
-    pattern = wave_pattern(nrows)
+    pattern = wave_travel(nrows)
 
     def wave_move(t):
-        for row, (_, offset) in zip(img, pattern):
+        for row, offset in zip(img, pattern):
             move(row, offset)
         return img
     
