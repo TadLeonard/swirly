@@ -3,6 +3,7 @@
 
 import sys
 import random
+import math
 from collections import namedtuple
 from itertools import starmap
 
@@ -96,18 +97,30 @@ class FilterEffect:
         self.pattern = pattern
         self.iteration = 0
 
-    def move(self, img, time=0):
+    def move(self, img, avg_husl):
         props = next(self.pattern)
         if props.vertical:
             img = img.swapaxes(0, 1)
-        if props.inverted:
-            img = img[::, ::-1]
-        move(img, props.travel) 
+        self.iteration += 1
 
+    def move_rows(self, img):
+        pass
+
+
+def wave_pattern(length, mag_coeff=4, period=50, offset=0):
+    i = 0
+    while True:
+        i += 0.1
+        travel = mag_coeff * math.cos(math.pi * i / period)
+        travel = int(round(travel))
+        travel += offset
+        prev = travel
+        yield i, travel
+        
 
 def _move_random(img):
     for row in img:
-        move(row, random.choice(list(range(-2, 3))))
+        move(row, random.choice(list(range(-2, 7))))
     return img
 
 
@@ -116,19 +129,24 @@ def animate_gif(animation):
 
 
 def animate_mp4(animation):
-    animation.write_videofile("bloop.mp4", fps=24)
+    animation.write_videofile("bloop.mp4", fps=10, audio=False, threads=2)
 
 
-def _read_img(path):
+def read_img(path):
     return imread(path)
 
 
 if __name__ == "__main__":
-    img = _read_img(sys.argv[1])
+    img = read_img(sys.argv[1])
 
-    def rand_move(t):
-        return _move_random(img)
+    nrows = img.shape[0]
+    pattern = wave_pattern(nrows)
+
+    def wave_move(t):
+        for row, (_, offset) in zip(img, pattern):
+            move(row, offset)
+        return img
     
-    animation = VideoClip(rand_move, duration=3)
+    animation = VideoClip(wave_move, duration=10)
     animate_mp4(animation)
 
