@@ -1,6 +1,6 @@
 import imread
 import numpy as np
-
+import nphusl
 import swirl
 
 
@@ -9,7 +9,7 @@ def img():
 
 
 def green_img():
-    a = np.ndarray((1000, 1000, 3))
+    a = np.ndarray((100, 100, 3))
     a[:] = [0, 255, 0]
     return a
  
@@ -19,7 +19,8 @@ def green_channel(*filter_args, **filter_kwargs):
     i[50, :] = [0, 0, 0]  # black horizontal stripe
     i[:, 50] = [0, 0, 0]  # black vertical stripe
     filter_hsl = swirl.hsl_filter(*filter_args, **filter_kwargs)
-    avg_husl = swirl.get_avg_husl(i)
+    husl = nphusl.to_husl(i)
+    avg_husl = np.average(husl, axis=0)
     return swirl.get_channel(i, filter_hsl, avg_husl)
 
 
@@ -53,3 +54,27 @@ def test_get_channel_one_broken():
     assert not np.all(c[:50])
     assert not np.all(c[51:]) 
 
+
+def test_row_move():
+    a = np.ndarray((100, 3), dtype=np.uint8)
+    a[:] = 255
+    a[:5] = 0
+    swirl.move(a, 2)
+    b = np.ndarray((100, 3), dtype=np.uint8)
+    b[:] = 255
+    b[2: 7] = 0
+    assert np.all(a == b)
+
+
+def test_neg_row_move():    
+    a = np.ndarray((100, 3), dtype=np.uint8)
+    a[:] = 255
+    a[:5] = 0
+    swirl.move(a, -2)
+    b = np.ndarray((100, 3), dtype=np.uint8)
+    b[:] = 255
+    b[-2:] = 0
+    b[:3] = 0
+    assert np.all(a == b)
+
+    
