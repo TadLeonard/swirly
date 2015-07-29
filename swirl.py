@@ -91,7 +91,7 @@ def move(img, travel):
         return
     elif travel < 0:
         if len(img.shape) == 1:
-            img = img[..., ::-1] 
+            img = img[::-1]
         else:
             img = img[::, ::-1]
     tail = img[-travel:].copy()  # pixel array wraps around
@@ -134,23 +134,29 @@ def wave_travel(length, mag_coeff=4, period=50, offset=0):
         yield travel
 
 
-def clump_vertical(img, values, value_range, magnitude=1):
-    lo, hi = value_range
-    select = np.logical_and(values > lo, values < hi)
+def clump_vertical(img, select, magnitude=1):
     while True:
         rwhere, cwhere = np.where(select)
         total_avg = np.average(rwhere)
-        #debug = np.zeros(img.shape, dtype=img.dtype)
-        #debug[:] = 255
+        debug = np.zeros(img.shape, dtype=img.dtype)
+        debug[:] = 255
         for col in set(cwhere):
+        #    continue
             col_avg = np.average(rwhere[cwhere == col])
-            #debug[col_avg:, col] = 0
+            debug[:, col][select[:, col]] = 0, 20, 230
+            debug[col_avg-1: col_avg+1, col] = 100, 0, 0
             travel = magnitude if col_avg < total_avg else -magnitude
+            if travel < 0:
+                print(travel)
             move(img[:, col], travel)
             move(select[:, col], travel)
-        #debug[total_avg-1: total_avg+1, :] = 255, 0, 0
-        #yield debug
-        yield img
+      #  for row in set(rwhere):
+      #      travel = magnitude * random.choice([1, -1])
+      #      move(img[row, :], travel)
+      #      move(select[row, :], travel)
+        debug[total_avg-1: total_avg+1, :] = 255, 0, 0
+        yield debug
+        #yield img
 
 
 def rand_travel(lo, hi):
@@ -178,8 +184,9 @@ def read_img(path):
 if __name__ == "__main__":
     img = read_img(sys.argv[1])
     hues = nphusl.to_hue(img)
-    hue_range = 250, 290
-    clumps = clump_vertical(img, hues, hue_range, 2)
+    lo, hi = 250, 290
+    select = np.logical_and(hues > lo, hues < hi)
+    clumps = clump_vertical(img, select, 1)
     
     def make_frame(_):
         return next(clumps)
