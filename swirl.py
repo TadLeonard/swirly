@@ -10,7 +10,7 @@ from itertools import starmap
 from imread import imread
 import numpy as np
 from moviepy.editor import VideoClip
-from husl import rgb_to_husl
+import nphusl
 
 
 
@@ -55,12 +55,6 @@ def _valid_s(smin, smax):
 _valid_l = _valid_s  # saturation has the same range as lightness
 
 
-def get_avg_husl(img):
-    avg_rgb = np.average(img, axis=1)
-    avg_rgb /= 255.0
-    return np.array(list(starmap(rgb_to_husl, avg_rgb)))
-    
-
 #@profile
 def get_channel(img, filter_hsl, avg_husl):
     """Returns row indices for which the HSL filter constraints are met"""
@@ -96,7 +90,10 @@ def move(img, travel):
     if travel == 0:
         return
     elif travel < 0:
-        img = img[::, ::-1]
+        if len(img.shape) == 1:
+            img = img[..., ::-1] 
+        else:
+            img = img[::, ::-1]
     tail = img[-travel:].copy()  # pixel array wraps around
     img[travel:] = img[:-travel]  # move bulk of pixels
     img[:travel] = tail  # move the saved `tail` into vacated space
@@ -111,7 +108,7 @@ class FilterEffect:
 
     def move(self, img, avg_husl):
         props = next(self.pattern)
-        if props.vertical:
+        if props.direction == VERTICAL:
             img = img.swapaxes(0, 1)
         self.iteration += 1
 
@@ -135,12 +132,35 @@ def wave_travel(length, mag_coeff=4, period=50, offset=0):
         travel += offset
         prev = travel
         yield travel
-        
+
+
+def clump_vertical(img, values, value_range, magnitude=1):
+    lo, hi = value_range
+    select = np.logical_and(values > lo, values < hi)
+    while True:
+        rwhere, cwhere = np.where(select)
+        total_avg = np.average(rwhere)
+        #debug = np.zeros(img.shape, dtype=img.dtype)
+        #debug[:] = 255
+        for col in set(cwhere):
+            col_avg = np.average(rwhere[cwhere == col])
+            #debug[col_avg:, col] = 0
+            travel = magnitude if col_avg < total_avg else -magnitude
+            move(img[:, col], travel)
+            move(select[:, col], travel)
+        #debug[total_avg-1: total_avg+1, :] = 255, 0, 0
+        #yield debug
+        yield img
+
 
 def rand_travel(lo, hi):
     choices = list(range(lo, hi))
     while True:
         yield random.choices(choices)
+
+
+######################
+# Creating animations
     
 
 def animate_gif(animation):
@@ -157,15 +177,13 @@ def read_img(path):
 
 if __name__ == "__main__":
     img = read_img(sys.argv[1])
-
-    nrows = img.shape[0]
-    pattern = wave_travel(nrows)
-
-    def wave_move(t):
-        for row, offset in zip(img, pattern):
-            move(row, offset)
-        return img
+    hues = nphusl.to_hue(img)
+    hue_range = 250, 290
+    clumps = clump_vertical(img, hues, hue_range, 2)
     
-    animation = VideoClip(wave_move, duration=10)
+    def make_frame(_):
+        return next(clumps)
+
+    animation = VideoClip(make_frame, duration=20)
     animate_mp4(animation)
 
