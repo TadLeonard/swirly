@@ -88,15 +88,17 @@ def move(img, travel):
     # is a real hack. Backwards slice assignment will work with c array
     # ordering, for example, but will break for Fortran style arrays.
     if travel == 0:
-        return
+        return img
     elif travel < 0:
-        if len(img.shape) == 1:
-            img = img[::-1]
-        else:
-            img = img[::, ::-1]
-    tail = img[-travel:].copy()  # pixel array wraps around
-    img[travel:] = img[:-travel]  # move bulk of pixels
-    img[:travel] = tail  # move the saved `tail` into vacated space
+        tail = img[:-travel].copy()
+        img[:travel] = img[-travel:]
+        img[travel:] = tail
+        return img
+    else:
+        tail = img[-travel:].copy()  # pixel array wraps around
+        img[travel:] = img[:-travel]  # move bulk of pixels
+        img[:travel] = tail  # move the saved `tail` into vacated space
+        return img
 
 
 class FilterEffect:
@@ -135,28 +137,48 @@ def wave_travel(length, mag_coeff=4, period=50, offset=0):
 
 
 def clump_vertical(img, select, magnitude=1):
+    rand_choices = list(range(-magnitude, magnitude+1))
+    pos_choices = list(range(0, magnitude + 1))
+    neg_choices = list(range(-magnitude, 1))
+    while True:
+        rwhere, cwhere = np.where(select)
+        total_avg = np.average(rwhere)
+        for col in set(cwhere):
+            col_avg = np.average(rwhere[cwhere == col])
+            choices = pos_choices if col_avg < total_avg else neg_choices
+            travel = random.choice(choices)
+            move(img[:, col], travel)
+            move(select[:, col], travel)
+        for row in set(rwhere):
+            travel = random.choice(rand_choices)
+            move(img[row, :], travel)
+            move(select[row, :], travel)
+        yield img
+
+
+def clump_vertical_debug(img, select, magnitude=1):
+    rand_choices = list(range(-magnitude, magnitude+1))
     while True:
         rwhere, cwhere = np.where(select)
         total_avg = np.average(rwhere)
         debug = np.zeros(img.shape, dtype=img.dtype)
         debug[:] = 255
+        debug[select] = 0, 0, 255
         for col in set(cwhere):
-        #    continue
             col_avg = np.average(rwhere[cwhere == col])
-            debug[:, col][select[:, col]] = 0, 20, 230
-            debug[col_avg-1: col_avg+1, col] = 100, 0, 0
+            debug[col_avg-1: col_avg+1, col] = 255, 0, 255
             travel = magnitude if col_avg < total_avg else -magnitude
             if travel < 0:
-                print(travel)
-            move(img[:, col], travel)
+                debug[:5, col] = 0, 255, 0
+            else:
+                debug[-5:, col] = 0, 255, 0
             move(select[:, col], travel)
-      #  for row in set(rwhere):
-      #      travel = magnitude * random.choice([1, -1])
-      #      move(img[row, :], travel)
-      #      move(select[row, :], travel)
+        for row in set(rwhere):
+            travel = random.choice(rand_choices)
+            move(select[row, :], travel)
+        debug[select] = 0, 255, 255
         debug[total_avg-1: total_avg+1, :] = 255, 0, 0
         yield debug
-        #yield img
 
 
 def rand_travel(lo, hi):
@@ -169,28 +191,25 @@ def rand_travel(lo, hi):
 # Creating animations
     
 
-def animate_gif(animation):
-    animation.write_gif("bloop.gif", fps=24, opt="OptimizePlus")
-
-
-def animate_mp4(animation):
-    animation.write_videofile("bloop.mp4", fps=10, audio=False, threads=2)
-
-
 def read_img(path):
     return imread(path)
 
 
 if __name__ == "__main__":
     img = read_img(sys.argv[1])
-    hues = nphusl.to_hue(img)
+
+    husl = nphusl.to_husl(img)
+    H, S, L = (husl[..., n] for n in range(3))
     lo, hi = 250, 290
-    select = np.logical_and(hues > lo, hues < hi)
+    select = np.logical_and(H > lo, H < hi)
+    #select = np.logical_and(select, S > 50)
+    
     clumps = clump_vertical(img, select, 1)
     
     def make_frame(_):
         return next(clumps)
 
     animation = VideoClip(make_frame, duration=20)
-    animate_mp4(animation)
+    animation.write_videofile("bloop.mp4", fps=24, audio=False, threads=2)
+    #animation.write_gif("bloop.gif", fps=24, opt="OptimizePlus")
 
