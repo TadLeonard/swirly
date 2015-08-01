@@ -77,4 +77,27 @@ def test_neg_row_move():
     b[:3] = 0
     assert np.all(a == b)
 
+
+def test_bool_row_move():
+    a = np.ndarray((100, 3), dtype=np.bool)
+    a[:] = True
+    a[:5] = False
+    swirl.move(a, 2)
+    b = np.ndarray((100, 3), dtype=np.bool)
+    b[:] = True
+    b[2: 7] = False
+    assert np.all(a == b)
+
+
+def test_neg_bool_row_move():    
+    z = np.ndarray((100, 100, 3), dtype=np.bool)
+    z[:] = True
+    z[::, :5] = False
     
+    swirl.move(z[10, :], -2)
+    b = np.ndarray((100, 3), dtype=np.bool)
+    b[:] = True
+    b[-2:] = False
+    b[:3] = False
+    assert np.all(z[10] == b)
+
