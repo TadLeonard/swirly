@@ -55,7 +55,6 @@ def _valid_s(smin, smax):
 _valid_l = _valid_s  # saturation has the same range as lightness
 
 
-#@profile
 def get_channel(img, filter_hsl, avg_husl):
     """Returns row indices for which the HSL filter constraints are met"""
     idx_select = np.ones(img.shape[0], dtype=bool)  # no "rows" selected initially
@@ -87,18 +86,15 @@ def move(img, travel):
     # workaround for an in place shift (numpy.roll creates a copy!), but it
     # is a real hack. Backwards slice assignment will work with c array
     # ordering, for example, but will break for Fortran style arrays.
-    if travel == 0:
-        return img
-    elif travel < 0:
+    if travel < 0:
         tail = img[:-travel].copy()
         img[:travel] = img[-travel:]
         img[travel:] = tail
-        return img
     else:
         tail = img[-travel:].copy()  # pixel array wraps around
         img[travel:] = img[:-travel]  # move bulk of pixels
         img[:travel] = tail  # move the saved `tail` into vacated space
-        return img
+    return img
 
 
 class FilterEffect:
@@ -136,55 +132,57 @@ def wave_travel(length, mag_coeff=4, period=50, offset=0):
         yield travel
 
 
-def clump_vertical(img, select, magnitude=1):
-    rand_choices = list(range(-magnitude, magnitude+1))
-    pos_choices = list(range(0, magnitude + 1))
-    neg_choices = list(range(-magnitude, 1))
+def clump_horizontal(img, select, moves=(0, 1)):
+    img = np.rot90(img)
+    select = np.rot90(select)
+    return clump_vertical(img, select, moves)
+
+
+def clump_vertical(img, select, moves=(0, 1)):
     while True:
-        rwhere, cwhere = np.where(select)
-        total_avg = np.average(rwhere)
-        for col in set(cwhere):
-            col_avg = np.average(rwhere[cwhere == col])
-            choices = pos_choices if col_avg < total_avg else neg_choices
-            travel = random.choice(choices)
-            move(img[:, col], travel)
-            move(select[:, col], travel)
-        for row in set(rwhere):
-            travel = random.choice(rand_choices)
-            move(img[row, :], travel)
-            move(select[row, :], travel)
+        clump_cols(img, select, moves)
+        #fuzz_rows(img, select, fuzz_moves, rows)
         yield img
 
 
-def clump_vertical_debug(img, select, magnitude=1):
-    rand_choices = list(range(-magnitude, magnitude+1))
-    while True:
-        rwhere, cwhere = np.where(select)
-        total_avg = np.average(rwhere)
-        debug = np.zeros(img.shape, dtype=img.dtype)
-        debug[:] = 255
-        debug[select] = 0, 0, 255
-        for col in set(cwhere):
-            col_avg = np.average(rwhere[cwhere == col])
-            debug[col_avg-1: col_avg+1, col] = 255, 0, 255
-            travel = magnitude if col_avg < total_avg else -magnitude
-            if travel < 0:
-                debug[:5, col] = 0, 255, 0
-            else:
-                debug[-5:, col] = 0, 255, 0
-            move(select[:, col], travel)
-        for row in set(rwhere):
-            travel = random.choice(rand_choices)
-            move(select[row, :], travel)
-        debug[select] = 0, 255, 255
-        debug[total_avg-1: total_avg+1, :] = 255, 0, 0
-        yield debug
+def clump_cols(img, select, moves):
+    rwhere, cwhere = np.nonzero(select)
+    total_avg = np.mean(rwhere)
+    #rows, cols = np.unique(rwhere), np.unique(cwhere)
+    cols = np.unique(cwhere)
+    if len(moves) == 1:
+        travels = np.zeros((len(cols),))
+        travels[:] = moves[0]
+    else: 
+        travels = np.random.choice(moves, len(cols))
+    for col, travel in zip(cols, travels):
+        if not travel:
+            continue
+        heights = rwhere[cwhere == col]
+        col_avg = np.mean(heights)
+        if col_avg > total_avg:
+            travel = -travel
+        move(img[:, col], travel)
+        move(select[:, col], travel)
+    #return rows  # rows affected by clumping
 
 
-def rand_travel(lo, hi):
-    choices = list(range(lo, hi))
+def fuzz_horizontal(img, select, moves=(0, 1)):
+    moves = tuple(moves)
+    fuzz_moves = tuple(-m for m in moves if m) + moves
     while True:
-        yield random.choices(choices)
+        rows = np.nonzero(np.any(select, axis=1))[0]
+        fuzz_rows(img, select, rows, fuzz_moves) 
+        yield img
+
+
+def fuzz_rows(img, select, rows, moves):
+    travels = np.random.choice(moves, len(rows))
+    for row, travel in zip(rows, travels):
+        if not travel:
+            continue
+        move(img[row, :], travel)
+        move(select[row, :], travel)
 
 
 ######################
@@ -200,16 +198,23 @@ if __name__ == "__main__":
 
     husl = nphusl.to_husl(img)
     H, S, L = (husl[..., n] for n in range(3))
-    lo, hi = 250, 290
-    select = np.logical_and(H > lo, H < hi)
+    #lo, hi = 250, 290
+    #select = np.logical_and(H > lo, H < hi)
     #select = np.logical_and(select, S > 50)
+    select = L < 40
     
-    clumps = clump_vertical(img, select, 1)
+    moves = (5,)
+    clumps = clump_vertical(img, select, moves)
+    clumps2 = clump_horizontal(img, select, moves)
+    #fuzzes = fuzz_horizontal(img, select, moves)
     
     def make_frame(_):
-        return next(clumps)
+        i = next(clumps2)
+        i = next(clumps)
+        return i
+        
 
-    animation = VideoClip(make_frame, duration=20)
+    animation = VideoClip(make_frame, duration=7)
     animation.write_videofile("bloop.mp4", fps=24, audio=False, threads=2)
     #animation.write_gif("bloop.gif", fps=24, opt="OptimizePlus")
 
