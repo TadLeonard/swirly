@@ -130,8 +130,6 @@ def clump_cols(img, select, moves):
         heights = rwhere[cwhere == col]
         col_avg = np.mean(heights)
         abs_diff = abs(col_avg - total_avg)
-        #if abs_diff < 1:
-        #    continue
         if abs_diff < travel:
             travel = 1
         if col_avg > total_avg:
@@ -207,9 +205,10 @@ def fuzz_rows(img, select, rows, moves):
 
 def read_img(path, as_grey=False):
     img = imread(path)
+    logging.info("Initial image shape: {}".format(img.shape))
     if as_grey:
         img = img[..., 0]
-    logging.info("Image shape: {}".format(img.shape))
+    logging.info("Working image shape: {}".format(img.shape))
     return img
 
 
@@ -238,16 +237,35 @@ def frame_maker(effects):
 # Whole programs
 
 
-def bw_clump_dark():
-    img = read_img(sys.argv[1], True)
-    select = img < (10 * 2.5)
+def bw_clump_dark(filename):
+    img = read_img(filename, True)
+    select = img < 25
+    print(select)
+    input()
     vert = clump_vert(img, select, (5,))
     horz = clump_horz(img, select, (5,))
     return zip_effects(img, vert, horz)
     
 
+def clump_dark(filename, percentile=4.0):
+    img = read_img(filename)
+    hsl = nphusl.to_husl(img)
+    _, _, L = (hsl[..., n] for n in range(3))
+    comp = np.percentile(L, 4.0)
+    select = L < comp
+    logging.info("Selection ratio: {:1.3f}".format(
+                 np.count_nonzero(select) / select.size))
+    travel = (1,)
+    vert = clump_vert(img, select, travel)
+    horz = clump_horz(img, select, travel)
+    return zip_effects(img, vert, horz)
+
+
 if __name__ == "__main__":
-    make_frame = frame_maker(bw_clump_dark())
-    animation = VideoClip(make_frame, duration=10)
-    animation.write_videofile("bloop.mp4", fps=24, audio=False, threads=2)
+    infile, outfile = sys.argv[1: 3]
+    frames = clump_dark(infile, 4.0)
+    #frames = bw_clump_dark(infile)
+    make_frame = frame_maker(frames)
+    animation = VideoClip(make_frame, duration=60)
+    animation.write_videofile(outfile, fps=24, audio=False, threads=2)
 
