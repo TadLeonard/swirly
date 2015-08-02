@@ -3,15 +3,20 @@
 
 import sys
 import random
+import logging
 import math
-from collections import namedtuple
-from itertools import starmap
 
-from imread import imread
+from collections import namedtuple
+from functools import partial
+from itertools import takewhile, repeat, islice
+
+from imread import imread, imwrite
 import numpy as np
 from moviepy.editor import VideoClip
 import nphusl
 
+
+logging.basicConfig(level=logging.INFO)
 
 
 ###################
@@ -74,10 +79,6 @@ def get_channel(img, filter_hsl, avg_husl):
 # Moving pixels
 
 
-VERTICAL = "vertical"
-HORIZONTAL = "horizontal"
-
-
 def move(img, travel):
     """Shift `img` a distance of `travel` in the positive direction.
     The pixel array wraps around, so the last pixels will end up being
@@ -97,83 +98,98 @@ def move(img, travel):
     return img
 
 
-class FilterEffect:
-
-    def __init__(self, hsl_filter, pattern):
-        self.hsl_filter = hsl_filter
-        self.pattern = pattern
-        self.iteration = 0
-
-    def move(self, img, avg_husl):
-        props = next(self.pattern)
-        if props.direction == VERTICAL:
-            img = img.swapaxes(0, 1)
-        self.iteration += 1
-
-    def move_rows(self, img):
-        pass
+def flipped(fn):
+    def wrapper(img, select, *args, **kwargs):
+        _img = np.rot90(img)
+        _select = np.rot90(select)
+        for _ in fn(_img, _select, *args, **kwargs):
+            yield img
+    return wrapper
 
 
-
-def rand_direction():
-    choices = (VERTICAL, HORIZONTAL)
-    while True:
-        yield random.choice(choices)
-
-
-def wave_travel(length, mag_coeff=4, period=50, offset=0):
-    i = 0
-    while True:
-        i += 0.1
-        travel = mag_coeff * math.cos(math.pi * i / period)
-        travel = int(round(travel))
-        travel += offset
-        prev = travel
-        yield travel
-
-
-def clump_horizontal(img, select, moves=(0, 1)):
-    img = np.rot90(img)
-    select = np.rot90(select)
-    return clump_vertical(img, select, moves)
-
-
-def clump_vertical(img, select, moves=(0, 1)):
-    while True:
-        clump_cols(img, select, moves)
-        #fuzz_rows(img, select, fuzz_moves, rows)
+def run_while_changed(fn, img, *args, **kwargs):
+    changed = True
+    while changed:
+        changed = fn(img, *args, **kwargs)
         yield img
 
 
 def clump_cols(img, select, moves):
     rwhere, cwhere = np.nonzero(select)
     total_avg = np.mean(rwhere)
-    #rows, cols = np.unique(rwhere), np.unique(cwhere)
     cols = np.unique(cwhere)
     if len(moves) == 1:
         travels = np.zeros((len(cols),))
         travels[:] = moves[0]
     else: 
         travels = np.random.choice(moves, len(cols))
+    n_changes = 0
+    nz = np.nonzero(travels)
+    cols, travels = cols[nz], travels[nz]
     for col, travel in zip(cols, travels):
-        if not travel:
-            continue
         heights = rwhere[cwhere == col]
         col_avg = np.mean(heights)
+        abs_diff = abs(col_avg - total_avg)
+        #if abs_diff < 1:
+        #    continue
+        if abs_diff < travel:
+            travel = 1
         if col_avg > total_avg:
             travel = -travel
+        n_changes += 1
         move(img[:, col], travel)
         move(select[:, col], travel)
-    #return rows  # rows affected by clumping
+    return n_changes
 
 
-def fuzz_horizontal(img, select, moves=(0, 1)):
+clump_vert = partial(run_while_changed, clump_cols)
+clump_horz = flipped(clump_vert)
+
+
+def disperse_cols(img, select, moves):
+    rwhere, cwhere = np.nonzero(select)
+    total_avg = np.mean(rwhere)
+    max_dist = img.shape[1] // 2
+    cols = np.unique(cwhere)
+    if len(moves) == 1:
+        travels = np.zeros((len(cols),))
+        travels[:] = moves[0]
+    else: 
+        travels = np.random.choice(moves, len(cols))
+    n_changes = 0
+    nz = np.nonzero(travels)
+    cols, travels = cols[nz], travels[nz]
+    for col, travel in zip(cols, travels):
+        heights = rwhere[cwhere == col]
+        col_avg = np.mean(heights)
+        diff = col_avg - total_avg
+        abs_diff = abs(diff)
+        if not abs_diff - max_dist:
+            continue
+        elif abs_diff < travel:
+            travel = 1
+        if col_avg < total_avg:
+            travel = -travel
+        n_changes += 1
+        move(img[:, col], travel)
+        move(select[:, col], travel)
+    return n_changes
+
+
+disperse_vert = partial(run_while_changed, disperse_cols)
+disperse_horz = flipped(disperse_vert)
+
+
+def fuzz_horz(img, select, moves=(0, 1)):
     moves = tuple(moves)
     fuzz_moves = tuple(-m for m in moves if m) + moves
     while True:
         rows = np.nonzero(np.any(select, axis=1))[0]
         fuzz_rows(img, select, rows, fuzz_moves) 
         yield img
+
+
+fuzz_vert = flipped(fuzz_horz)
 
 
 def fuzz_rows(img, select, rows, moves):
@@ -189,32 +205,49 @@ def fuzz_rows(img, select, rows, moves):
 # Creating animations
     
 
-def read_img(path):
-    return imread(path)
+def read_img(path, as_grey=False):
+    img = imread(path)
+    if as_grey:
+        img = img[..., 0]
+    logging.info("Image shape: {}".format(img.shape))
+    return img
 
+
+def dark_clump_turns(img, select, moves):
+    yield img
+    while True:
+        for _ in clump_vert(img, select, moves):
+            yield img
+        for _ in clump_horz(img, select, moves):
+            yield img
+
+
+def zip_effects(img, *effects):
+    yield img
+    for _ in zip(*effects):
+        yield img
+
+
+def frame_maker(effects):
+    def make(_):
+        return next(effects)
+    return make
+
+
+#################
+# Whole programs
+
+
+def bw_clump_dark():
+    img = read_img(sys.argv[1], True)
+    select = img < (10 * 2.5)
+    vert = clump_vert(img, select, (5,))
+    horz = clump_horz(img, select, (5,))
+    return zip_effects(img, vert, horz)
+    
 
 if __name__ == "__main__":
-    img = read_img(sys.argv[1])
-
-    husl = nphusl.to_husl(img)
-    H, S, L = (husl[..., n] for n in range(3))
-    #lo, hi = 250, 290
-    #select = np.logical_and(H > lo, H < hi)
-    #select = np.logical_and(select, S > 50)
-    select = L < 40
-    
-    moves = (5,)
-    clumps = clump_vertical(img, select, moves)
-    clumps2 = clump_horizontal(img, select, moves)
-    #fuzzes = fuzz_horizontal(img, select, moves)
-    
-    def make_frame(_):
-        i = next(clumps2)
-        i = next(clumps)
-        return i
-        
-
-    animation = VideoClip(make_frame, duration=7)
+    make_frame = frame_maker(bw_clump_dark())
+    animation = VideoClip(make_frame, duration=10)
     animation.write_videofile("bloop.mp4", fps=24, audio=False, threads=2)
-    #animation.write_gif("bloop.gif", fps=24, opt="OptimizePlus")
 
