@@ -204,7 +204,11 @@ def fuzz_rows(img, select, rows, moves):
     
 
 def read_img(path, as_grey=False):
-    img = imread(path)
+    img = np.squeeze(imread(path))
+    if len(img.shape) == 2:
+        _img = np.ndarray(img.shape + (3,), dtype=img.dtype)
+        _img[:] = img[..., None]
+        img = _img
     logging.info("Initial image shape: {}".format(img.shape))
     if as_grey:
         img = img[..., 0]
@@ -237,34 +241,27 @@ def frame_maker(effects):
 # Whole programs
 
 
-def bw_clump_dark(filename):
-    img = read_img(filename, True)
-    select = img < 25
-    print(select)
-    input()
-    vert = clump_vert(img, select, (5,))
-    horz = clump_horz(img, select, (5,))
-    return zip_effects(img, vert, horz)
-    
-
 def clump_dark(filename, percentile=4.0):
     img = read_img(filename)
     hsl = nphusl.to_husl(img)
     _, _, L = (hsl[..., n] for n in range(3))
-    comp = np.percentile(L, 4.0)
-    select = L < comp
-    logging.info("Selection ratio: {:1.3f}".format(
-                 np.count_nonzero(select) / select.size))
+    dark = L < np.percentile(L, 4.0)
+    light = L > np.percentile(L, 90.0)
+    logging.info("Selection ratio: {:1.1f}%".format(
+                 100 * np.count_nonzero(dark) / dark.size))
+    logging.info("Selection ratio: {:1.1f}%".format(
+                 100 * np.count_nonzero(light) / light.size))
     travel = (1,)
-    vert = clump_vert(img, select, travel)
-    horz = clump_horz(img, select, travel)
-    return zip_effects(img, vert, horz)
+    vert = clump_vert(img, dark, travel)
+    horz = clump_horz(img, dark, travel)
+    #dvert = disperse_vert(img, light, travel)
+    #dhorz = disperse_horz(img, light, travel)
+    return zip_effects(img, vert, horz, dvert)
 
 
 if __name__ == "__main__":
     infile, outfile = sys.argv[1: 3]
     frames = clump_dark(infile, 4.0)
-    #frames = bw_clump_dark(infile)
     make_frame = frame_maker(frames)
     animation = VideoClip(make_frame, duration=60)
     animation.write_videofile(outfile, fps=24, audio=False, threads=2)
