@@ -79,6 +79,7 @@ def get_channel(img, filter_hsl, avg_husl):
 # Moving pixels
 
 
+@profile
 def move(img, travel):
     """Shift `img` a distance of `travel` in the positive direction.
     The pixel array wraps around, so the last pixels will end up being
@@ -87,6 +88,8 @@ def move(img, travel):
     # workaround for an in place shift (numpy.roll creates a copy!), but it
     # is a real hack. Backwards slice assignment will work with c array
     # ordering, for example, but will break for Fortran style arrays.
+    if len(img.shape) > 1:
+        img = img.swapaxes(0, 1)
     if travel < 0:
         tail = img[:-travel].copy()
         img[:travel] = img[-travel:]
@@ -114,39 +117,78 @@ def run_while_changed(fn, img, *args, **kwargs):
         yield img
 
 
-def clump_cols(img, select, moves):
+@profile
+def clump_rows(img, select, moves):
     rwhere, cwhere = np.nonzero(select)
-    total_avg = np.mean(rwhere)
-    cols = np.unique(cwhere)
+    rows = np.unique(rwhere)  # row indices involved
     if len(moves) == 1:
-        travels = np.zeros((len(cols),))
+        travels = np.zeros((len(rows),))
         travels[:] = moves[0]
     else: 
         travels = np.random.choice(moves, len(cols))
-    n_changes = 0
-    nz = np.nonzero(travels)
-    cols, travels = cols[nz], travels[nz]
-    for col, travel in zip(cols, travels):
-        heights = rwhere[cwhere == col]
-        col_avg = np.mean(heights)
-        abs_diff = abs(col_avg - total_avg)
-        if abs_diff < travel:
-            travel = 1
-        if col_avg > total_avg:
-            travel = -travel
-        n_changes += 1
-        move(img[:, col], travel)
-        move(select[:, col], travel)
-    return n_changes
+    nz_travels = np.nonzero(travels)[0]
+    rwhere = rwhere[nz_travels]
+    cwhere = cwhere[nz_travels]
+    rows = rows[nz_travels]
+
+    s = select[(rows,)]
+    col_indices = np.arange(0, img.shape[1]) 
+    col_matrix = np.zeros(s.shape, dtype=np.float)
+    col_matrix[:, None] = col_indices
+    col_matrix[~s] = np.nan
+    row_means = np.nanmean(col_matrix, axis=1).astype(np.int)
+
+    total_mean = np.mean(cwhere)
+    diff = total_mean - row_means
+#    img[:] = 255
+#    for row, mean in zip(rows, row_means):
+#        if mean < total_mean:
+#            img[row, mean-3: mean+3] = 200, 0, 200
+#        else:
+#            img[row, mean-3: mean+3] = 100, 0, 100
+#    img[:, total_mean] = 255, 0, 255
+#    img[select] = 0, 200, 200
+    if max(moves) > 1:
+        abs_diff = np.abs(diff)
+        travels[abs_diff < travels] = 1
+    travels[diff < 0] *= -1  # reverse row travel dir if row avg < total avg
+    all_travels = tuple(-m for m in moves) + moves
+    for travel in all_travels:
+        rows_to_move = rows[travels == travel]
+        for start, stop in _chunk_select(rows_to_move):
+            move(img[start: stop], travel)
+            move(select[start: stop], travel)
+    #return False
+    return True
 
 
-clump_vert = partial(run_while_changed, clump_cols)
-clump_horz = flipped(clump_vert)
+def _chunk_select(rows):
+    """Generate contiguous chunks of indices in tuples of
+    (start_index, stop_index) where stop_index is not inclusive"""
+    contiguous = np.diff(rows) == 1 
+    start, stop = 0, 1
+    while stop < (rows.size - 1):
+        if not contiguous[start]:
+            stop = start + 1
+            yield rows[start], rows[start] + 1
+        else:
+            remaining = contiguous[start:]
+            stop = np.argmin(remaining) + start
+            if stop == start:
+                yield rows[start], rows[-1]
+                break
+            else:
+                yield rows[start], rows[stop] + 1  # INCLUDE argmin
+        start = stop
+    
+   
+clump_horz = partial(run_while_changed, clump_rows)
+clump_vert = flipped(clump_horz)
 
 
 def disperse_cols(img, select, moves):
     rwhere, cwhere = np.nonzero(select)
-    total_avg = np.mean(rwhere)
+    total_mean = np.mean(rwhere)
     max_dist = img.shape[1] // 2
     cols = np.unique(cwhere)
     if len(moves) == 1:
@@ -160,17 +202,15 @@ def disperse_cols(img, select, moves):
     for col, travel in zip(cols, travels):
         heights = rwhere[cwhere == col]
         col_avg = np.mean(heights)
-        diff = col_avg - total_avg
+        diff = col_avg - total_mean
         abs_diff = abs(diff)
-        if not abs_diff - max_dist:
-            continue
-        elif abs_diff < travel:
+        if abs_diff < travel:
             travel = 1
-        if col_avg < total_avg:
+        if col_avg < total_mean:
             travel = -travel
         n_changes += 1
-        move(img[:, col], travel)
-        move(select[:, col], travel)
+#        move(img[:, col], travel)
+#        move(select[:, col], travel)
     return n_changes
 
 
@@ -203,15 +243,13 @@ def fuzz_rows(img, select, rows, moves):
 # Creating animations
     
 
-def read_img(path, as_grey=False):
+def read_img(path):
     img = np.squeeze(imread(path))
     if len(img.shape) == 2:
         _img = np.ndarray(img.shape + (3,), dtype=img.dtype)
         _img[:] = img[..., None]
         img = _img
     logging.info("Initial image shape: {}".format(img.shape))
-    if as_grey:
-        img = img[..., 0]
     logging.info("Working image shape: {}".format(img.shape))
     return img
 
@@ -246,23 +284,19 @@ def clump_dark(filename, percentile=4.0):
     hsl = nphusl.to_husl(img)
     _, _, L = (hsl[..., n] for n in range(3))
     dark = L < np.percentile(L, 4.0)
-    light = L > np.percentile(L, 90.0)
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(dark) / dark.size))
-    logging.info("Selection ratio: {:1.1f}%".format(
-                 100 * np.count_nonzero(light) / light.size))
     travel = (1,)
+   # img[dark] = 255, 0, 255
     vert = clump_vert(img, dark, travel)
     horz = clump_horz(img, dark, travel)
-    #dvert = disperse_vert(img, light, travel)
-    #dhorz = disperse_horz(img, light, travel)
-    return zip_effects(img, vert, horz, dvert)
+    return zip_effects(img, horz)
 
 
 if __name__ == "__main__":
     infile, outfile = sys.argv[1: 3]
     frames = clump_dark(infile, 4.0)
     make_frame = frame_maker(frames)
-    animation = VideoClip(make_frame, duration=60)
+    animation = VideoClip(make_frame, duration=10)
     animation.write_videofile(outfile, fps=24, audio=False, threads=2)
 
