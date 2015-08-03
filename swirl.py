@@ -256,13 +256,13 @@ def clump_dark(filename, percentile=4.0):
     horz = clump_horz(img, dark, travel)
     #dvert = disperse_vert(img, light, travel)
     #dhorz = disperse_horz(img, light, travel)
-    return zip_effects(img, vert, horz, dvert)
+    return zip_effects(img, vert)
 
 
 if __name__ == "__main__":
     infile, outfile = sys.argv[1: 3]
     frames = clump_dark(infile, 4.0)
     make_frame = frame_maker(frames)
-    animation = VideoClip(make_frame, duration=60)
+    animation = VideoClip(make_frame, duration=10)
     animation.write_videofile(outfile, fps=24, audio=False, threads=2)
 
