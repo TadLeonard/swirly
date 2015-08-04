@@ -188,20 +188,21 @@ def clump_cols(img, select, moves):
 
 
 @profile
-def _chunk_select(rows):
+def _chunk_select(indices):
     """Generate contiguous chunks of indices in tuples of
     (start_index, stop_index) where stop_index is not inclusive"""
-    contiguous = np.diff(rows) == 1 
-    buf = []
-    for r, n in zip_longest(rows, contiguous):
-        buf.append(r)
-        if not n:
-            yield buf[0], buf[-1] + 1
-            buf = []
-    if buf:
-        yield buf[0], buf[-1] + 1
-
+    contiguous = np.diff(indices) == 1 
+    row_cont = zip_longest(indices, contiguous)
+    for left, do_continue in row_cont:
+        if not do_continue:
+            yield left, left + 1
+        else:
+            for right, do_continue in row_cont:
+                if not do_continue:
+                    yield left, right + 1
+                    break
    
+
 clump = partial(move_forward, clump_cols)
 clump_vert = partial(run_while_changed, clump)
 clump_horz = flipped(clump_vert)
