@@ -79,7 +79,6 @@ def get_channel(img, filter_hsl, avg_husl):
 # Moving pixels
 
 
-@profile
 def move(i, travel):
     """Shift `img` a distance of `travel` in the positive direction.
     The pixel array wraps around, so the last pixels will end up being
@@ -179,7 +178,6 @@ def clump_cols(img, select, moves):
             yield select[:, start: stop], travel
 
 
-@profile
 def _chunk_select(indices):
     """Generate contiguous chunks of indices in tuples of
     (start_index, stop_index) where stop_index is not inclusive"""
@@ -201,35 +199,6 @@ clump_horz = flipped(clump_vert)
 disperse = partial(move_backward, clump_cols)
 disperse_vert = partial(run_while_changed, disperse)
 disperse_horz = flipped(disperse_vert)
-
-
-def clump_cols2(img, select, moves):
-    rwhere, cwhere = np.nonzero(select)
-    total_avg = np.mean(rwhere)
-    cols = np.unique(cwhere)
-    if len(moves) == 1:
-        travels = np.zeros((len(cols),))
-        travels[:] = moves[0]
-    else: 
-        travels = np.random.choice(moves, len(cols))
-    nz = np.nonzero(travels)
-    cols, travels = cols[nz], travels[nz]
-    for col, travel in zip(cols, travels):
-        heights = rwhere[cwhere == col]
-        col_avg = np.mean(heights)
-        abs_diff = abs(col_avg - total_avg)
-        if abs_diff < travel:
-            travel = 1
-        if col_avg > total_avg:
-            travel = -travel
-        move(img[:, col], travel)
-        move(select[:, col], travel)
-    return True
-    return False
-
-
-clump_vert2 = partial(run_while_changed, clump_cols2)
-clump_horz2 = flipped(clump_vert2)
 
 
 def fuzz_horz(img, select, moves=(0, 1)):
@@ -303,13 +272,13 @@ def clump_dark(filename, percentile=4.0):
     travel = (1,)
     vert = clump_vert(img, dark, travel)
     horz = clump_horz(img, dark, travel)
-    return zip_effects(img, vert)
+    return zip_effects(img, horz)
 
 
 if __name__ == "__main__":
     infile, outfile = sys.argv[1: 3]
     frames = clump_dark(infile, 4.0)
     make_frame = frame_maker(frames)
-    animation = VideoClip(make_frame, duration=10)
+    animation = VideoClip(make_frame, duration=6)
     animation.write_videofile(outfile, fps=24, audio=False, threads=2)
 
