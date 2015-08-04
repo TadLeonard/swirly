@@ -8,7 +8,7 @@ import math
 
 from collections import namedtuple
 from functools import partial
-from itertools import takewhile, repeat, islice
+from itertools import takewhile, repeat, islice, zip_longest
 
 from imread import imread, imwrite
 import numpy as np
@@ -79,7 +79,8 @@ def get_channel(img, filter_hsl, avg_husl):
 # Moving pixels
 
 
-def move(img, travel):
+@profile
+def move(i, travel):
     """Shift `img` a distance of `travel` in the positive direction.
     The pixel array wraps around, so the last pixels will end up being
     the first pixels."""
@@ -87,15 +88,23 @@ def move(img, travel):
     # workaround for an in place shift (numpy.roll creates a copy!), but it
     # is a real hack. Backwards slice assignment will work with c array
     # ordering, for example, but will break for Fortran style arrays.
+ #   if len(img.shape) > 2:
+ #       img = img.swapaxes(0, 1)
+    #i = img.squeeze()
+    if travel < 0:
+        tail = i[:-travel].copy()
+        i[:travel] = i[-travel:]
+        i[travel:] = tail
+    else:
+        tail = i[-travel:].copy()  # pixel array wraps around
+        i[travel:] = i[:-travel]  # move bulk of pixels
+        i[:travel] = tail  # move the saved `tail` into vacated space
+    return i
+
+
+def mass_move(img, travel):
     if travel < 0:
         tail = img[:-travel].copy()
-        img[:travel] = img[-travel:]
-        img[travel:] = tail
-    else:
-        tail = img[-travel:].copy()  # pixel array wraps around
-        img[travel:] = img[:-travel]  # move bulk of pixels
-        img[:travel] = tail  # move the saved `tail` into vacated space
-    return img
 
 
 def flipped(fn):
@@ -114,7 +123,94 @@ def run_while_changed(fn, img, *args, **kwargs):
         yield img
 
 
+def mover(transform, fn, *args, **kwargs):
+    return transform(fn(*args, **kwargs))
+
+
+def move_chunks(moves):
+    moved = 0
+    for arr, travel in moves:
+        moved += arr.shape[0]
+        move(arr, travel)
+    return moved
+
+
+def move_chunks_back(moves):
+    backward_moves = ((arr, -travel) for arr, travel in moves)
+    return move_forward(backward_moves)
+
+
+move_forward = partial(mover, move_chunks)
+move_backward = partial(mover, move_chunks_back)
+
+
 def clump_cols(img, select, moves):
+    rwhere, cwhere = np.nonzero(select)
+    total_avg = np.mean(rwhere)
+    cols = np.unique(cwhere)
+    if len(moves) == 1:
+        travels = np.zeros((cols.size,))
+        travels[:] = moves[0]
+    else: 
+        travels = np.random.choice(moves, cols.size)
+    nz = np.nonzero(travels)
+    cols, travels = cols[nz], travels[nz]
+
+    s = select[:, cols]
+    row_indices = np.arange(0, img.shape[0]) 
+    row_matrix = np.zeros(select.shape, dtype=np.float)
+    rm = row_matrix.swapaxes(0, 1)
+    rm[:, None] = row_indices
+    row_matrix = rm.swapaxes(0, 1)
+    row_matrix[~select] = np.nan
+    col_avgs = np.nanmean(row_matrix, axis=0)
+
+    diff = col_avgs - total_avg
+    abs_diff = np.abs(diff)
+
+    # when columns are as close the median as they can be, we want them to
+    # gradually move with a random choice between moving 0 or 1 pixels
+    stuck = abs_diff < travels
+    travels[stuck] = np.random.choice((0, 1), np.count_nonzero(stuck))
+    travels[diff > 0] *= -1  # reverse row travel dir if row avg < total avg
+    nz = np.nonzero(travels)
+    travels = travels[nz]
+    cols = cols[nz]
+
+    all_travels = tuple(-m for m in moves) + moves
+    for travel in all_travels:
+        cols_to_move = cols[travels == travel]
+        if not cols_to_move.size:
+            continue
+        for start, stop in _chunk_select(cols_to_move):
+            yield img[:, start: stop], travel
+            yield select[:, start: stop], travel
+
+
+@profile
+def _chunk_select(rows):
+    """Generate contiguous chunks of indices in tuples of
+    (start_index, stop_index) where stop_index is not inclusive"""
+    contiguous = np.diff(rows) == 1 
+    buf = []
+    for r, n in zip_longest(rows, contiguous):
+        buf.append(r)
+        if not n:
+            yield buf[0], buf[-1] + 1
+            buf = []
+    if buf:
+        yield buf[0], buf[-1] + 1
+
+   
+clump = partial(move_forward, clump_cols)
+clump_vert = partial(run_while_changed, clump)
+clump_horz = flipped(clump_vert)
+disperse = partial(move_backward, clump_cols)
+disperse_vert = partial(run_while_changed, disperse)
+disperse_horz = flipped(disperse_vert)
+
+
+def clump_cols2(img, select, moves):
     rwhere, cwhere = np.nonzero(select)
     total_avg = np.mean(rwhere)
     cols = np.unique(cwhere)
@@ -123,7 +219,6 @@ def clump_cols(img, select, moves):
         travels[:] = moves[0]
     else: 
         travels = np.random.choice(moves, len(cols))
-    n_changes = 0
     nz = np.nonzero(travels)
     cols, travels = cols[nz], travels[nz]
     for col, travel in zip(cols, travels):
@@ -134,48 +229,14 @@ def clump_cols(img, select, moves):
             travel = 1
         if col_avg > total_avg:
             travel = -travel
-        n_changes += 1
         move(img[:, col], travel)
         move(select[:, col], travel)
-    return n_changes
+    return True
+    return False
 
 
-clump_vert = partial(run_while_changed, clump_cols)
-clump_horz = flipped(clump_vert)
-
-
-def disperse_cols(img, select, moves):
-    rwhere, cwhere = np.nonzero(select)
-    total_avg = np.mean(rwhere)
-    max_dist = img.shape[1] // 2
-    cols = np.unique(cwhere)
-    if len(moves) == 1:
-        travels = np.zeros((len(cols),))
-        travels[:] = moves[0]
-    else: 
-        travels = np.random.choice(moves, len(cols))
-    n_changes = 0
-    nz = np.nonzero(travels)
-    cols, travels = cols[nz], travels[nz]
-    for col, travel in zip(cols, travels):
-        heights = rwhere[cwhere == col]
-        col_avg = np.mean(heights)
-        diff = col_avg - total_avg
-        abs_diff = abs(diff)
-        if not abs_diff - max_dist:
-            continue
-        elif abs_diff < travel:
-            travel = 1
-        if col_avg < total_avg:
-            travel = -travel
-        n_changes += 1
-        move(img[:, col], travel)
-        move(select[:, col], travel)
-    return n_changes
-
-
-disperse_vert = partial(run_while_changed, disperse_cols)
-disperse_horz = flipped(disperse_vert)
+clump_vert2 = partial(run_while_changed, clump_cols2)
+clump_horz2 = flipped(clump_vert2)
 
 
 def fuzz_horz(img, select, moves=(0, 1)):
@@ -203,15 +264,13 @@ def fuzz_rows(img, select, rows, moves):
 # Creating animations
     
 
-def read_img(path, as_grey=False):
+def read_img(path):
     img = np.squeeze(imread(path))
     if len(img.shape) == 2:
         _img = np.ndarray(img.shape + (3,), dtype=img.dtype)
         _img[:] = img[..., None]
         img = _img
     logging.info("Initial image shape: {}".format(img.shape))
-    if as_grey:
-        img = img[..., 0]
     logging.info("Working image shape: {}".format(img.shape))
     return img
 
@@ -246,16 +305,11 @@ def clump_dark(filename, percentile=4.0):
     hsl = nphusl.to_husl(img)
     _, _, L = (hsl[..., n] for n in range(3))
     dark = L < np.percentile(L, 4.0)
-    light = L > np.percentile(L, 90.0)
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(dark) / dark.size))
-    logging.info("Selection ratio: {:1.1f}%".format(
-                 100 * np.count_nonzero(light) / light.size))
     travel = (1,)
     vert = clump_vert(img, dark, travel)
     horz = clump_horz(img, dark, travel)
-    #dvert = disperse_vert(img, light, travel)
-    #dhorz = disperse_horz(img, light, travel)
     return zip_effects(img, vert)
 
 
