@@ -123,12 +123,30 @@ def run_while_changed(fn, img, *args, **kwargs):
         yield img
 
 
-@profile
+def mover(transform, fn, *args, **kwargs):
+    return transform(fn(*args, **kwargs))
+
+
+def move_chunks(moves):
+    moved = 0
+    for arr, travel in moves:
+        moved += arr.shape[0]
+        move(arr, travel)
+    return moved
+
+
+def move_chunks_back(moves):
+    backward_moves = ((arr, -travel) for arr, travel in moves)
+    return move_forward(backward_moves)
+
+
+move_forward = partial(mover, move_chunks)
+move_backward = partial(mover, move_chunks_back)
+
+
 def clump_cols(img, select, moves):
     rwhere, cwhere = np.nonzero(select)
     total_avg = np.mean(rwhere)
- #   img[:] = 255
- #   img[total_avg, :] = 255, 0, 255
     cols = np.unique(cwhere)
     if len(moves) == 1:
         travels = np.zeros((cols.size,))
@@ -159,49 +177,14 @@ def clump_cols(img, select, moves):
     travels = travels[nz]
     cols = cols[nz]
 
-#    for col, travel in zip(cols, travels):
-        #heights = rwhere[cwhere == col]
-        #col_avg = np.mean(heights)
-        #abs_diff = abs(col_avg - total_avg)
-        #if abs_diff < travel:
-        #    travel = 1
-        #if col_avg > total_avg:
-        #    travel = -travel
-#        move(img[:, col], travel)
-#        move(select[:, col], travel)
-
-
-#    return True
-
-    #img[:] = 255
-    #img[select] = 255, 0, 255
-
     all_travels = tuple(-m for m in moves) + moves
-#    for travel in all_travels:
-#        cols_to_move = cols[travels == travel]
-#        if not cols_to_move.size:
-#            continue
-#        for buf in _chunk_select_2(cols_to_move):
-#            for col in buf:
-#                move(img[:, col], travel) 
-#                move(select[:, col], travel)
-#    return True
-                
-
-    moved = 0
     for travel in all_travels:
         cols_to_move = cols[travels == travel]
-        moved += cols_to_move.size
         if not cols_to_move.size:
             continue
         for start, stop in _chunk_select(cols_to_move):
-#            for col in range(start, stop):
-#                move(img[:, col], travel) 
-#                move(select[:, col], travel)
-            move(img[:, start: stop], travel)
-            move(select[:, start: stop], travel)
-    #return False
-    return True
+            yield img[:, start: stop], travel
+            yield select[:, start: stop], travel
 
 
 @profile
@@ -219,15 +202,17 @@ def _chunk_select(rows):
         yield buf[0], buf[-1] + 1
 
    
-clump_vert = partial(run_while_changed, clump_cols)
+clump = partial(move_forward, clump_cols)
+clump_vert = partial(run_while_changed, clump)
 clump_horz = flipped(clump_vert)
+disperse = partial(move_backward, clump_cols)
+disperse_vert = partial(run_while_changed, disperse)
+disperse_horz = flipped(disperse_vert)
 
 
 def clump_cols2(img, select, moves):
     rwhere, cwhere = np.nonzero(select)
     total_avg = np.mean(rwhere)
-#    img[:] = 255
-#    img[total_avg, :] = 255, 0, 255
     cols = np.unique(cwhere)
     if len(moves) == 1:
         travels = np.zeros((len(cols),))
@@ -239,7 +224,6 @@ def clump_cols2(img, select, moves):
     for col, travel in zip(cols, travels):
         heights = rwhere[cwhere == col]
         col_avg = np.mean(heights)
-#        img[col_avg, col] = 255, 0, 100
         abs_diff = abs(col_avg - total_avg)
         if abs_diff < travel:
             travel = 1
@@ -253,10 +237,6 @@ def clump_cols2(img, select, moves):
 
 clump_vert2 = partial(run_while_changed, clump_cols2)
 clump_horz2 = flipped(clump_vert2)
-
-
-#disperse_vert = partial(run_while_changed, disperse_cols)
-#disperse_horz = flipped(disperse_vert)
 
 
 def fuzz_horz(img, select, moves=(0, 1)):
@@ -328,7 +308,6 @@ def clump_dark(filename, percentile=4.0):
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(dark) / dark.size))
     travel = (1,)
-   # img[dark] = 255, 0, 255
     vert = clump_vert(img, dark, travel)
     horz = clump_horz(img, dark, travel)
     return zip_effects(img, vert)
