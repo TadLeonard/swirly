@@ -10,7 +10,7 @@ from collections import namedtuple
 from functools import partial
 from itertools import takewhile, repeat, islice, zip_longest
 
-from imread import imread, imwrite
+from imread import imread
 import numpy as np
 from moviepy.editor import VideoClip
 import nphusl
@@ -88,9 +88,6 @@ def move(i, travel):
     # workaround for an in place shift (numpy.roll creates a copy!), but it
     # is a real hack. Backwards slice assignment will work with c array
     # ordering, for example, but will break for Fortran style arrays.
- #   if len(img.shape) > 2:
- #       img = img.swapaxes(0, 1)
-    #i = img.squeeze()
     if travel < 0:
         tail = i[:-travel].copy()
         i[:travel] = i[-travel:]
@@ -100,11 +97,6 @@ def move(i, travel):
         i[travel:] = i[:-travel]  # move bulk of pixels
         i[:travel] = tail  # move the saved `tail` into vacated space
     return i
-
-
-def mass_move(img, travel):
-    if travel < 0:
-        tail = img[:-travel].copy()
 
 
 def flipped(fn):
