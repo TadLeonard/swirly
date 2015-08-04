@@ -128,7 +128,7 @@ def move_chunks(moves):
 
 def move_chunks_back(moves):
     backward_moves = ((arr, -travel) for arr, travel in moves)
-    return move_forward(backward_moves)
+    return move_chunks(backward_moves)
 
 
 move_forward = partial(mover, move_chunks)
@@ -249,9 +249,12 @@ def dark_clump_turns(img, select, moves):
 
 
 def zip_effects(img, *effects):
-    yield img
-    for _ in zip(*effects):
+    try:
         yield img
+        for _ in zip(*effects):
+            yield img
+    except KeyboardInterrupt:
+        raise StopIteration
 
 
 def frame_maker(effects):
@@ -271,16 +274,16 @@ def clump_dark(filename, percentile=4.0):
     dark = L < np.percentile(L, 4.0)
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(dark) / dark.size))
-    travel = (1,)
-    vert = clump_vert(img, dark, travel)
+    travel = (10,5,4,3,2,1)
+    vert = disperse_vert(img, dark, travel)
     horz = clump_horz(img, dark, travel)
-    return zip_effects(img, horz)
+    return zip_effects(img, horz, vert)
 
 
 if __name__ == "__main__":
     infile, outfile = sys.argv[1: 3]
     frames = clump_dark(infile, 4.0)
     make_frame = frame_maker(frames)
-    animation = VideoClip(make_frame, duration=6)
+    animation = VideoClip(make_frame, duration=60)
     animation.write_videofile(outfile, fps=24, audio=False, threads=2)
 
