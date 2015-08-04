@@ -154,6 +154,8 @@ def clump_cols(img, select, moves):
     rm[:, None] = row_indices
     row_matrix = rm.swapaxes(0, 1)
     row_matrix[~select] = np.nan
+    valid_cols = ~np.all(np.isnan(row_matrix), axis=0)
+    row_matrix = row_matrix[:, valid_cols]
     col_avgs = np.nanmean(row_matrix, axis=0)
 
     diff = col_avgs - total_avg
