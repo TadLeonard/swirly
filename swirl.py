@@ -297,7 +297,7 @@ if __name__ == "__main__":
     infile, outfile = sys.argv[1: 3]
     frames = clump_dark(infile, 4.0)
     make_frame = frame_maker(frames)
-    animation = VideoClip(make_frame, duration=60)
+    animation = VideoClip(make_frame, duration=6)
     animation.write_videofile(outfile, fps=24, audio=False, threads=2,
                               preset="ultrafast")
 
