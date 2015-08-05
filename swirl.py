@@ -234,6 +234,9 @@ def read_img(path):
         _img = np.ndarray(img.shape + (3,), dtype=img.dtype)
         _img[:] = img[..., None]
         img = _img
+    elif img.shape[-1] == 4:
+        # we can't handle an RGBA array
+        img = img[..., :3]
     logging.info("Initial image shape: {}".format(img.shape))
     logging.info("Working image shape: {}".format(img.shape))
     return img
@@ -257,6 +260,16 @@ def zip_effects(img, *effects):
         raise StopIteration
 
 
+def interleave_effects(img, *effects, repeats=1):
+    try:
+        yield img
+        for effect in effects:
+            for _ in range(repeats):
+                next(effect)
+    except KeyboardInterrupt:
+        raise StopIteration
+
+
 def frame_maker(effects):
     def make(_):
         return next(effects)
@@ -271,13 +284,14 @@ def clump_dark(filename, percentile=4.0):
     img = read_img(filename)
     hsl = nphusl.to_husl(img)
     _, _, L = (hsl[..., n] for n in range(3))
-    dark = L < np.percentile(L, 4.0)
+    dark = L > np.percentile(L, 6.0)
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(dark) / dark.size))
-    travel = (10,5,4,3,2,1)
-    vert = disperse_vert(img, dark, travel)
+    travel = ( 1,)
+    vert = clump_vert(img, dark, travel)
     horz = clump_horz(img, dark, travel)
     return zip_effects(img, horz, vert)
+    return interleave_effects(img, horz, vert, repeats=4)
 
 
 if __name__ == "__main__":
