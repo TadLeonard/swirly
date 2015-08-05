@@ -118,7 +118,6 @@ def mover(transform, fn, *args, **kwargs):
     return transform(fn(*args, **kwargs))
 
 
-@profile
 def move_chunks(moves):
     moved = 0
     for arr, travel in moves:
@@ -136,7 +135,6 @@ move_forward = partial(mover, move_chunks)
 move_backward = partial(mover, move_chunks_back)
 
 
-@profile
 def clump_cols(img, select, moves):
     rwhere, cwhere = np.nonzero(select)
     total_avg = np.mean(rwhere)
@@ -180,7 +178,6 @@ def clump_cols(img, select, moves):
         yield from _chunk_select(cols_to_move, img, select, travel)
 
 
-#def _chunk_select(indices):
 def _chunk_select(indices, img, select, travel):
     """Generate contiguous chunks of indices in tuples of
     (start_index, stop_index) where stop_index is not inclusive"""
@@ -257,8 +254,8 @@ def dark_clump_turns(img, select, moves):
 def zip_effects(img, *effects):
     try:
         yield img
-        for _ in zip(*effects):
-            yield img
+        for imgs in zip(*effects):
+            yield imgs[-1]
     except KeyboardInterrupt:
         raise StopIteration
 
@@ -268,7 +265,7 @@ def interleave_effects(img, *effects, repeats=1):
         yield img
         for effect in effects:
             for _ in range(repeats):
-                next(effect)
+                yield next(effect)
     except KeyboardInterrupt:
         raise StopIteration
 
@@ -301,5 +298,6 @@ if __name__ == "__main__":
     frames = clump_dark(infile, 4.0)
     make_frame = frame_maker(frames)
     animation = VideoClip(make_frame, duration=60)
-    animation.write_videofile(outfile, fps=24, audio=False, threads=2)
+    animation.write_videofile(outfile, fps=24, audio=False, threads=2,
+                              preset="ultrafast")
 
