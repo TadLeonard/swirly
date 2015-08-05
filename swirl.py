@@ -140,7 +140,7 @@ move_backward = partial(mover, move_chunks_back)
 def clump_cols(img, select, moves):
     rwhere, cwhere = np.nonzero(select)
     total_avg = np.mean(rwhere)
-    cols = np.where(np.any(select, axis=0))[0]
+    cols = np.nonzero(np.any(select, axis=0))[0]
     if len(moves) == 1:
         travels = np.zeros((cols.size,))
         travels[:] = moves[0]
@@ -158,8 +158,8 @@ def clump_cols(img, select, moves):
     row_matrix[~select] = np.nan
     valid_cols = ~np.all(np.isnan(row_matrix), axis=0)
     row_matrix = row_matrix[:, valid_cols]
-    col_avgs = np.nanmean(row_matrix, axis=0)
 
+    col_avgs = np.nanmean(row_matrix, axis=0)
     diff = col_avgs - total_avg
     abs_diff = np.abs(diff)
 
@@ -177,23 +177,24 @@ def clump_cols(img, select, moves):
         cols_to_move = cols[travels == travel]
         if not cols_to_move.size:
             continue
-        for start, stop in _chunk_select(cols_to_move):
-            yield img[:, start: stop], travel
-            yield select[:, start: stop], travel
+        yield from _chunk_select(cols_to_move, img, select, travel)
 
 
-def _chunk_select(indices):
+#def _chunk_select(indices):
+def _chunk_select(indices, img, select, travel):
     """Generate contiguous chunks of indices in tuples of
     (start_index, stop_index) where stop_index is not inclusive"""
     contiguous = np.diff(indices) == 1 
     row_cont = zip_longest(indices, contiguous)
     for left, do_continue in row_cont:
         if not do_continue:
-            yield left, left + 1
+            yield img[:, left], travel
+            yield select[:, left], travel
         else:
             for right, do_continue in row_cont:
                 if not do_continue:
-                    yield left, right + 1
+                    yield img[:, left: right + 1], travel
+                    yield select[:, left: right + 1], travel
                     break
    
 
