@@ -118,6 +118,7 @@ def mover(transform, fn, *args, **kwargs):
     return transform(fn(*args, **kwargs))
 
 
+@profile
 def move_chunks(moves):
     moved = 0
     for arr, travel in moves:
@@ -135,10 +136,11 @@ move_forward = partial(mover, move_chunks)
 move_backward = partial(mover, move_chunks_back)
 
 
+@profile
 def clump_cols(img, select, moves):
     rwhere, cwhere = np.nonzero(select)
     total_avg = np.mean(rwhere)
-    cols = np.unique(cwhere)
+    cols = np.where(np.any(select, axis=0))[0]
     if len(moves) == 1:
         travels = np.zeros((cols.size,))
         travels[:] = moves[0]
@@ -291,7 +293,6 @@ def clump_dark(filename, percentile=4.0):
     vert = clump_vert(img, dark, travel)
     horz = clump_horz(img, dark, travel)
     return zip_effects(img, horz, vert)
-    return interleave_effects(img, horz, vert, repeats=4)
 
 
 if __name__ == "__main__":
