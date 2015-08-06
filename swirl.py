@@ -10,7 +10,7 @@ from collections import namedtuple
 from functools import partial
 from itertools import takewhile, repeat, islice, zip_longest
 
-from imread import imread
+from imread import imread, imwrite
 import numpy as np
 from moviepy.editor import VideoClip
 import nphusl
@@ -79,23 +79,24 @@ def get_channel(img, filter_hsl, avg_husl):
 # Moving pixels
 
 
-def move(i, travel):
+@profile
+def move(img, travel):
     """Shift `img` a distance of `travel` in the positive direction.
-    The pixel array wraps around, so the last pixels will end up being
+    The array wraps around, so the last pixels will end up being
     the first pixels."""
     # NOTE: This copy is needed. Doing a backwards slice assignment is a good
     # workaround for an in place shift (numpy.roll creates a copy!), but it
     # is a real hack. Backwards slice assignment will work with c array
     # ordering, for example, but will break for Fortran style arrays.
     if travel < 0:
-        tail = i[:-travel].copy()
-        i[:travel] = i[-travel:]
-        i[travel:] = tail
+        tail = img[:-travel].copy()
+        img[:travel] = img[-travel:]
+        img[travel:] = tail
     else:
-        tail = i[-travel:].copy()  # pixel array wraps around
-        i[travel:] = i[:-travel]  # move bulk of pixels
-        i[:travel] = tail  # move the saved `tail` into vacated space
-    return i
+        tail = img[-travel:].copy()  # pimgxel array wraps around
+        img[travel:] = img[:-travel]  # move bulk of pimgxels
+        img[:travel] = tail  # move the saved `taimgl` imgnto vacated space
+    return img
 
 
 def flipped(fn):
@@ -107,10 +108,10 @@ def flipped(fn):
     return wrapper
 
 
-def run_while_changed(fn, img, *args, **kwargs):
-    changed = True
-    while changed:
-        changed = fn(img, *args, **kwargs)
+@profile
+def run_forever(fn, img, *args, **kwargs):
+    while True:
+        fn(img, *args, **kwargs)
         yield img
 
 
@@ -118,12 +119,10 @@ def mover(transform, fn, *args, **kwargs):
     return transform(fn(*args, **kwargs))
 
 
+@profile
 def move_chunks(moves):
-    moved = 0
     for arr, travel in moves:
-        moved += arr.shape[0]
         move(arr, travel)
-    return moved
 
 
 def move_chunks_back(moves):
@@ -135,8 +134,11 @@ move_forward = partial(mover, move_chunks)
 move_backward = partial(mover, move_chunks_back)
 
 
+@profile
 def clump_cols(img, select, moves):
     rwhere, cwhere = np.nonzero(select)
+    if not rwhere.size:
+        return
     total_avg = np.mean(rwhere)
     cols = np.nonzero(np.any(select, axis=0))[0]
     if len(moves) == 1:
@@ -161,15 +163,10 @@ def clump_cols(img, select, moves):
     diff = col_avgs - total_avg
     abs_diff = np.abs(diff)
 
-    # when columns are as close the median as they can be, we want them to
-    # gradually move with a random choice between moving 0 or 1 pixels
-    stuck = abs_diff < travels
-    travels[stuck] = np.random.choice((0, 1), np.count_nonzero(stuck))
     travels[diff > 0] *= -1  # reverse row travel dir if row avg < total avg
     nz = np.nonzero(travels)
     travels = travels[nz]
     cols = cols[nz]
-
     all_travels = tuple(-m for m in moves) + moves
     for travel in all_travels:
         cols_to_move = cols[travels == travel]
@@ -178,6 +175,7 @@ def clump_cols(img, select, moves):
         yield from _chunk_select(cols_to_move, img, select, travel)
 
 
+@profile
 def _chunk_select(indices, img, select, travel):
     """Generate contiguous chunks of indices in tuples of
     (start_index, stop_index) where stop_index is not inclusive"""
@@ -196,10 +194,10 @@ def _chunk_select(indices, img, select, travel):
    
 
 clump = partial(move_forward, clump_cols)
-clump_vert = partial(run_while_changed, clump)
+clump_vert = partial(run_forever, clump)
 clump_horz = flipped(clump_vert)
 disperse = partial(move_backward, clump_cols)
-disperse_vert = partial(run_while_changed, disperse)
+disperse_vert = partial(run_forever, disperse)
 disperse_horz = flipped(disperse_vert)
 
 
@@ -260,14 +258,27 @@ def zip_effects(img, *effects):
         raise StopIteration
 
 
-def interleave_effects(img, *effects, repeats=1):
+def interleave_effects(img, *effects,
+                       repeats=1, effects_per_frame=1, rand=False):
+    effects = list(effects)
     try:
-        yield img
-        for effect in effects:
-            for _ in range(repeats):
-                yield next(effect)
+        yield from _iterleave(img, effects, repeats, effects_per_frame, rand)
     except KeyboardInterrupt:
         raise StopIteration
+
+
+def _iterleave(img, effects, repeats, effects_per_frame, rand):
+    yield img
+    while True:
+        count = 0
+        if rand:
+            random.shuffle(effects)
+        for effect in effects:
+            for _ in range(repeats):
+                e = next(effect)
+                count += 1
+                if not count % effects_per_frame:
+                    yield e
 
 
 def frame_maker(effects):
@@ -283,21 +294,62 @@ def frame_maker(effects):
 def clump_dark(filename, percentile=4.0):
     img = read_img(filename)
     hsl = nphusl.to_husl(img)
-    _, _, L = (hsl[..., n] for n in range(3))
-    dark = L > np.percentile(L, 6.0)
+    H, _, L = (hsl[..., n] for n in range(3))
+    dark = L < np.percentile(L, 6.0)
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(dark) / dark.size))
-    travel = ( 1,)
+    travel = (1,)
     vert = clump_vert(img, dark, travel)
     horz = clump_horz(img, dark, travel)
     return zip_effects(img, horz, vert)
 
 
+def clump_hues(filename):
+    img = read_img(filename)
+    hsl = nphusl.to_husl(img)
+    H, _, L = (hsl[..., n] for n in range(3))
+    light = L > 5
+    light_hues = H[light]
+    travel = (1,)
+    
+    def gen_selects():
+        min_hue = min_pct = 0
+        for max_pct in range(20, 120, 20):
+            max_hue = np.percentile(light_hues, max_pct)
+            select = np.logical_and(H < max_hue, H > min_hue)
+            select = np.logical_and(light, select)
+            yield clump_horz(img, select, travel)
+            yield clump_vert(img, select, travel)
+            min_hue = max_hue
+        
+    return zip_effects(img, *gen_selects())
+
+
+def blueb(img):
+    hsl = nphusl.to_husl(img)
+    H, _, L = (hsl[..., n] for n in range(3))
+    dark = L < 5
+    bright = L > 80
+    travel = (1,)
+    blue = np.logical_and(H > 240, H < 290)
+    
+    hblue = clump_horz(img, bright, travel)
+    vblue = clump_vert(img, bright, travel)
+    hdark = disperse_horz(img, dark, travel)
+    vdark = disperse_vert(img, dark, travel)
+    return zip_effects(img, hblue, vblue, hdark, vdark)
+
+
 if __name__ == "__main__":
     infile, outfile = sys.argv[1: 3]
-    frames = clump_dark(infile, 4.0)
+    img = imread(infile)
+    frames = blueb(img)
     make_frame = frame_maker(frames)
-    animation = VideoClip(make_frame, duration=6)
-    animation.write_videofile(outfile, fps=24, audio=False, threads=2,
-                              preset="ultrafast")
+    animation = VideoClip(make_frame, duration=60)
+    try:
+        animation.write_videofile(outfile, fps=24, audio=False, threads=2,
+                                  preset="fast")
+    except KeyboardInterrupt:
+        pass
+    imwrite("last.jpg", img)
 
