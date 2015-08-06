@@ -346,10 +346,7 @@ if __name__ == "__main__":
     frames = blueb(img)
     make_frame = frame_maker(frames)
     animation = VideoClip(make_frame, duration=60)
-    try:
-        animation.write_videofile(outfile, fps=24, audio=False, threads=2,
-                                  preset="fast")
-    except KeyboardInterrupt:
-        pass
-    imwrite("last.jpg", img)
+    animation.write_videofile(outfile, fps=24, audio=False, threads=2,
+                              preset="fast")
+    imwrite("_{0}_last.jpg".format(__name__), img)
 
