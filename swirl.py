@@ -240,31 +240,28 @@ def read_img(path):
     return img
 
 
-def dark_clump_turns(img, select, moves):
-    yield img
-    while True:
-        for _ in clump_vert(img, select, moves):
-            yield img
-        for _ in clump_horz(img, select, moves):
-            yield img
+def handle_kb_interrupt(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        try:
+            yield from fn(*args, **kwargs)
+        except KeyboardInterrupt:
+            raise StopIteration
+    return wrapped
 
 
+@handle_kb_interrupt
 def zip_effects(img, *effects):
-    try:
-        yield img
-        for imgs in zip(*effects):
-            yield imgs[-1]
-    except KeyboardInterrupt:
-        raise StopIteration
+    yield img
+    for imgs in zip(*effects):
+        yield imgs[-1]
 
 
+@handle_kb_interrupt
 def interleave_effects(img, *effects,
                        repeats=1, effects_per_frame=1, rand=False):
     effects = list(effects)
-    try:
-        yield from _iterleave(img, effects, repeats, effects_per_frame, rand)
-    except KeyboardInterrupt:
-        raise StopIteration
+    yield from _iterleave(img, effects, repeats, effects_per_frame, rand)
 
 
 def _iterleave(img, effects, repeats, effects_per_frame, rand):
