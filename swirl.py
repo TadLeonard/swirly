@@ -345,7 +345,7 @@ if __name__ == "__main__":
     animation = VideoClip(make_frame, duration=60)
     animation.write_videofile(outfile, fps=24, audio=False, threads=2,
                               preset="fast")
-    imwrite("_{0}_last.jpg".format(__file__), img, metadata=metadata,
+    imwrite("_{}_last.jpg".format("swirl"), img, metadata=metadata,
             opts={"quality": 100})
 
 
