@@ -7,7 +7,7 @@ import logging
 import math
 
 from collections import namedtuple
-from functools import partial
+from functools import partial, wraps
 from itertools import takewhile, repeat, islice, zip_longest
 
 from imread import imread, imwrite
@@ -339,11 +339,13 @@ def blueb(img):
 
 if __name__ == "__main__":
     infile, outfile = sys.argv[1: 3]
-    img = imread(infile)
+    img, metadata = imread(infile, return_metadata=True)
     frames = blueb(img)
     make_frame = frame_maker(frames)
     animation = VideoClip(make_frame, duration=60)
     animation.write_videofile(outfile, fps=24, audio=False, threads=2,
                               preset="fast")
-    imwrite("_{0}_last.jpg".format(__name__), img)
+    imwrite("_{0}_last.jpg".format(__name__), img, metadata=metadata,
+            opts={"quality": 100})
+
 
