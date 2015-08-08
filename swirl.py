@@ -62,7 +62,7 @@ _valid_l = _valid_s  # saturation has the same range as lightness
 
 def get_channel(img, filter_hsl, avg_husl):
     """Returns row indices for which the HSL filter constraints are met"""
-    idx_select = np.ones(img.shape[0], dtype=bool)  # no "rows" selected initially
+    idx_select = np.ones(img.shape[0], dtype=np.bool)  # no "rows" selected initially
     for prop_idx, prop in enumerate(filter_hsl):
         if not prop:
             continue
@@ -73,6 +73,13 @@ def get_channel(img, filter_hsl, avg_husl):
         idx_select[avg < (pmin - 0.1)] = 0
         idx_select[avg > (pmax + 0.1)] = 0
     return idx_select
+
+
+def select(*selections):
+    sel = np.ones(selections[0].shape[:2], dtype=np.bool)
+    for sub_select in selections:
+        sel = np.logical_and(sel, sub_select)
+    return sel
 
 
 ################
@@ -163,20 +170,25 @@ def clump_cols(img, select, moves):
     diff = col_avgs - total_avg
     abs_diff = np.abs(diff)
 
+    # when columns are as close the median as they can be, we want them to
+    # gradually move with a random choice between moving 0 or 1 pixels
+    stuck = abs_diff < travels
+    travels[stuck] = np.random.choice((0, 1), np.count_nonzero(stuck))
     travels[diff > 0] *= -1  # reverse row travel dir if row avg < total avg
     nz = np.nonzero(travels)
     travels = travels[nz]
     cols = cols[nz]
+
     all_travels = tuple(-m for m in moves) + moves
     for travel in all_travels:
         cols_to_move = cols[travels == travel]
         if not cols_to_move.size:
             continue
-        yield from _chunk_select(cols_to_move, img, select, travel)
+        yield from chunk_select_cols(cols_to_move, img, select, travel)
 
 
 @profile
-def _chunk_select(indices, img, select, travel):
+def chunk_select_cols(indices, img, select, travel):
     """Generate contiguous chunks of indices in tuples of
     (start_index, stop_index) where stop_index is not inclusive"""
     contiguous = np.diff(indices) == 1 
@@ -221,6 +233,18 @@ def fuzz_rows(img, select, rows, moves):
         move(img[row, :], travel)
         move(select[row, :], travel)
 
+
+def slide_vert(img, travel):
+    while True:
+        move(img, travel)
+        yield img
+
+
+def slide_horz(img, travel):
+    flip = np.rot90(img)
+    for _ in slide_vert(flip, travel):
+        yield img
+        
 
 ######################
 # Creating animations
@@ -288,8 +312,7 @@ def frame_maker(effects):
 # Whole programs
 
 
-def clump_dark(filename, percentile=4.0):
-    img = read_img(filename)
+def clump_dark(img, percentile=4.0):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
     dark = L < np.percentile(L, 6.0)
@@ -301,25 +324,30 @@ def clump_dark(filename, percentile=4.0):
     return zip_effects(img, horz, vert)
 
 
-def clump_hues(filename):
-    img = read_img(filename)
+def clump_hues(img):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
-    light = L > 5
-    light_hues = H[light]
+    light = L > 1
     travel = (1,)
     
-    def gen_selects():
-        min_hue = min_pct = 0
-        for max_pct in range(20, 120, 20):
-            max_hue = np.percentile(light_hues, max_pct)
-            select = np.logical_and(H < max_hue, H > min_hue)
-            select = np.logical_and(light, select)
-            yield clump_horz(img, select, travel)
-            yield clump_vert(img, select, travel)
-            min_hue = max_hue
-        
-    return zip_effects(img, *gen_selects())
+    def effects():
+        for selection in select_ranges(H, 20, light):
+            yield clump_vert(img, selection, travel)
+        #yield slide_vert(img, 1)
+
+    yield from zip_effects(img, *effects())
+
+
+def select_ranges(select_by, percentile, *extra_filters):
+    selectable = select(*extra_filters) 
+    selectable_values = select_by[selectable]
+    min_val = 0
+    for max_pct in range(percentile, 100 + percentile, percentile):
+        max_val = np.percentile(selectable_values, max_pct)
+        selection = select(selectable,
+                           select_by < max_val, select_by > min_val)
+        yield selection
+        min_val = max_val
 
 
 def blueb(img):
@@ -328,21 +356,21 @@ def blueb(img):
     dark = L < 5
     bright = L > 80
     travel = (1,)
-    blue = np.logical_and(H > 240, H < 290)
+    blue = select(H > 240, H < 290)
     
     hblue = clump_horz(img, bright, travel)
     vblue = clump_vert(img, bright, travel)
     hdark = disperse_horz(img, dark, travel)
     vdark = disperse_vert(img, dark, travel)
-    return zip_effects(img, hblue, vblue, hdark, vdark)
+    yield from zip_effects(img, hblue, vblue, hdark, vdark)
 
 
 if __name__ == "__main__":
     infile, outfile = sys.argv[1: 3]
     img, metadata = imread(infile, return_metadata=True)
-    frames = blueb(img)
+    frames = clump_hues(img)
     make_frame = frame_maker(frames)
-    animation = VideoClip(make_frame, duration=60)
+    animation = VideoClip(make_frame, duration=6)
     animation.write_videofile(outfile, fps=24, audio=False, threads=2,
                               preset="fast")
     imwrite("_{}_last.jpg".format("swirl"), img, metadata=metadata,
