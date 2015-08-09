@@ -205,25 +205,8 @@ def chunk_select_cols(indices, img, select):
                     yield select[:, left: right + 1]
                     break
    
-
-@profile
-def chunk_select(indices, img, select, travel):
-    """Generate contiguous chunks of indices in tuples of
-    (start_index, stop_index) where stop_index is not inclusive"""
-    contiguous = np.diff(indices) == 1 
-    row_cont = zip_longest(indices, contiguous)
-    for left, do_continue in row_cont:
-        if not do_continue:
-            yield img[:, left], travel
-            yield select[:, left], travel
-        else:
-            for right, do_continue in row_cont:
-                if not do_continue:
-                    yield img[:, left: right + 1], travel
-                    yield select[:, left: right + 1], travel
-                    break
- 
-
+       
+             
 clump = partial(move_forward, clump_cols)
 clump_vert = partial(run_forever, clump)
 clump_horz = flipped(clump_vert)
