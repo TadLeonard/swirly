@@ -285,15 +285,15 @@ def zip_effects(img, *effects):
 def interleave_effects(img, *effects,
                        repeats=1, effects_per_frame=1, rand=False):
     effects = list(effects)
+    yield img
     yield from _iterleave(img, effects, repeats, effects_per_frame, rand)
 
 
 def _iterleave(img, effects, repeats, effects_per_frame, rand):
-    yield img
+    count = 0
+    prepare = random.shuffle if rand else lambda x: x
     while True:
-        count = 0
-        if rand:
-            random.shuffle(effects)
+        prepare(effects)
         for effect in effects:
             for _ in range(repeats):
                 e = next(effect)
@@ -331,9 +331,9 @@ def clump_hues(img):
     travel = (1,)
     
     def effects():
-        for selection in select_ranges(H, 20, light):
+        for selection in select_ranges(H, 50, light):
             yield clump_vert(img, selection, travel)
-        #yield slide_vert(img, 1)
+        yield slide_horz(img, 1)
 
     yield from zip_effects(img, *effects())
 
