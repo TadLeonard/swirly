@@ -184,11 +184,30 @@ def clump_cols(img, select, moves):
         cols_to_move = cols[travels == travel]
         if not cols_to_move.size:
             continue
-        yield from chunk_select_cols(cols_to_move, img, select, travel)
+        column_chunks = chunk_select_cols(cols_to_move, img, select)
+        yield from zip(column_chunks, repeat(travel))
 
 
 @profile
-def chunk_select_cols(indices, img, select, travel):
+def chunk_select_cols(indices, img, select):
+    """Generate contiguous chunks of indices in tuples of
+    (start_index, stop_index) where stop_index is not inclusive"""
+    contiguous = np.diff(indices) == 1 
+    row_cont = zip_longest(indices, contiguous)
+    for left, do_continue in row_cont:
+        if not do_continue:
+            yield img[:, left]
+            yield select[:, left]
+        else:
+            for right, do_continue in row_cont:
+                if not do_continue:
+                    yield img[:, left: right + 1]
+                    yield select[:, left: right + 1]
+                    break
+   
+
+@profile
+def chunk_select(indices, img, select, travel):
     """Generate contiguous chunks of indices in tuples of
     (start_index, stop_index) where stop_index is not inclusive"""
     contiguous = np.diff(indices) == 1 
@@ -203,7 +222,7 @@ def chunk_select_cols(indices, img, select, travel):
                     yield img[:, left: right + 1], travel
                     yield select[:, left: right + 1], travel
                     break
-   
+ 
 
 clump = partial(move_forward, clump_cols)
 clump_vert = partial(run_forever, clump)
@@ -234,15 +253,27 @@ def fuzz_rows(img, select, rows, moves):
         move(select[row, :], travel)
 
 
-def slide_vert(img, travel):
+def slide_horz(img, select, travel, moves):
+    while True:
+        rows = np.nonzero(np.any(select, axis=1))[0]
+        slide_rows(img, select, rows, moves)
+
+
+def slide_rows(img, select, rows, moves):
+    travels = np.random.choice(moves, rows.size)
+    for travel in moves:
+        pass
+
+
+def slide_img_vert(img, travel):
     while True:
         move(img, travel)
         yield img
 
 
-def slide_horz(img, travel):
+def slide_img_horz(img, travel):
     flip = np.rot90(img)
-    for _ in slide_vert(flip, travel):
+    for _ in slide_img_vert(flip, travel):
         yield img
         
 
@@ -333,7 +364,7 @@ def clump_hues(img):
     def effects():
         for selection in select_ranges(H, 50, light):
             yield clump_vert(img, selection, travel)
-        yield slide_horz(img, 1)
+        yield slide_img_horz(img, 1)
 
     yield from zip_effects(img, *effects())
 
