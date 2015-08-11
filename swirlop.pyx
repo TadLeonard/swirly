@@ -1,8 +1,8 @@
 import numpy as np
 cimport numpy as np
 
-from cpython cimport bool
 import cython
+#from cython.parallel import prange
 
 
 @cython.boundscheck(False)
@@ -63,3 +63,86 @@ def column_avgs(np.ndarray[np.uint8_t, ndim=2] select):
     return avgs, rowset, total_avg
     
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.nonecheck(False)
+cpdef void movend(np.ndarray img, int travel):
+    if travel < 0:
+        img = img[::-1]
+        travel = -travel
+
+    cdef int nd = img.ndim
+    if nd == 3:
+        move3d(img, travel)
+    elif nd == 2:
+        move2d(img, travel)
+    else:
+        move1d(img, travel)
+       
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.nonecheck(False)
+cpdef inline void move3d(np.ndarray[np.uint8_t, ndim=3] img, int travel):
+    cdef int i, j, x, c
+    cdef int cols = img.shape[0]
+    cdef int rows = img.shape[1]
+    cdef int chans = img.shape[2]
+    cdef np.ndarray[np.uint8_t, ndim=3] tail
+    tail = np.zeros((travel, rows, chans), dtype=np.uint8)
+    for i in range(rows):
+        for j in range(travel):  # cuts into cols
+            x = j + cols - travel 
+            for c in range(chans):
+                tail[j, i, c] = img[x, i, c]
+    for i in range(rows):
+        for j in range(cols-1, travel-1, -1):
+            x = j - travel
+            for c in range(chans):
+                img[j, i, c] = img[x, i, c]
+    for i in range(rows):
+        for j in range(travel):
+            for c in range(chans):
+                img[j, i, c] = tail[j, i, c]
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.nonecheck(False)
+cpdef inline void move2d(np.ndarray[np.uint8_t, ndim=2] img, int travel):
+    cdef int i, j, x 
+    cdef int cols = img.shape[0]
+    cdef int rows = img.shape[1]
+    cdef np.ndarray[np.uint8_t, ndim=2] tail
+    tail = np.zeros((travel, rows), dtype=np.uint8)
+    for i in range(rows):
+        for j in range(travel):
+            x = j + cols - travel 
+            tail[j, i] = img[x, i]
+    for i in range(rows):
+        for j in range(cols-1, travel-1, -1):
+            x = j - travel
+            img[j, i] = img[x, i]
+    for i in range(rows):
+        for j in range(travel):
+            img[j, i] = tail[j, i]
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.nonecheck(False)
+cpdef inline void move1d(np.ndarray[np.uint8_t, ndim=1] img, int travel):
+    cdef int i, x
+    cdef int cols = img.shape[0]
+    cdef np.ndarray[np.uint8_t, ndim=1] tail
+    tail = np.zeros((travel,), dtype=np.uint8)
+    for i in range(travel):
+        x = i + cols - travel 
+        tail[i] = img[x]
+    for i in range(cols-1, travel-1, -1):
+        x = i - travel
+        img[i] = img[x]
+    for i in range(travel):
+        img[i] = tail[i]
+
+ 
