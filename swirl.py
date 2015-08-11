@@ -5,6 +5,7 @@ import sys
 import random
 import logging
 import math
+import warnings
 
 from collections import namedtuple
 from functools import partial, wraps
@@ -14,6 +15,8 @@ from imread import imread, imwrite
 import numpy as np
 from moviepy.editor import VideoClip
 import nphusl
+from swirlop import chunk_select, avg_col_height
+import numba
 
 
 logging.basicConfig(level=logging.INFO)
@@ -143,30 +146,19 @@ move_backward = partial(mover, move_chunks_back)
 
 @profile
 def clump_cols(img, select, moves):
-    rwhere, cwhere = np.nonzero(select)
+    cwhere, rwhere = np.nonzero(select.swapaxes(0, 1))
     if not rwhere.size:
         return
     total_avg = np.mean(rwhere)
     cols = np.nonzero(np.any(select, axis=0))[0]
+
     if len(moves) == 1:
         travels = np.zeros((cols.size,))
         travels[:] = moves[0]
     else: 
         travels = np.random.choice(moves, cols.size)
-    nz = np.nonzero(travels)
-    cols, travels = cols[nz], travels[nz]
 
-    s = select[:, cols]
-    row_indices = np.arange(0, img.shape[0]) 
-    row_matrix = np.zeros(select.shape, dtype=np.float)
-    rm = row_matrix.swapaxes(0, 1)
-    rm[:, None] = row_indices
-    row_matrix = rm.swapaxes(0, 1)
-    row_matrix[~select] = np.nan
-    valid_cols = ~np.all(np.isnan(row_matrix), axis=0)
-    row_matrix = row_matrix[:, valid_cols]
-
-    col_avgs = np.nanmean(row_matrix, axis=0)
+    col_avgs = avg_col_height(cwhere, rwhere, cols)
     diff = col_avgs - total_avg
     abs_diff = np.abs(diff)
 
@@ -184,28 +176,33 @@ def clump_cols(img, select, moves):
         cols_to_move = cols[travels == travel]
         if not cols_to_move.size:
             continue
-        column_chunks = chunk_select_cols(cols_to_move, img, select)
-        yield from zip(column_chunks, repeat(travel))
+        for start, stop in chunk_select(cols_to_move):
+            yield img[:, start: stop], travel
+            yield select[:, start: stop], travel
 
 
-@profile
-def chunk_select_cols(indices, img, select):
-    """Generate contiguous chunks of indices in tuples of
-    (start_index, stop_index) where stop_index is not inclusive"""
-    contiguous = np.diff(indices) == 1 
-    row_cont = zip_longest(indices, contiguous)
-    for left, do_continue in row_cont:
-        if not do_continue:
-            yield img[:, left]
-            yield select[:, left]
-        else:
-            for right, do_continue in row_cont:
-                if not do_continue:
-                    yield img[:, left: right + 1]
-                    yield select[:, left: right + 1]
-                    break
-   
-       
+@numba.autojit
+def __avg_col_height(col_indices, row_indices, cols):
+    avgs = np.empty(cols.shape[0], dtype=np.int)
+    current_col = col_indices[0]
+    current_idx = 0
+    current_sum = 0
+    current_winsize = 0
+    current_row = 0
+    for i in range(col_indices.shape[0]):
+        if current_col != col_indices[i]:
+            current_col = col_indices[i]
+            avgs[current_idx] = current_sum / current_winsize
+            current_sum = 0
+            current_winsize = 0
+            current_idx += 1
+        current_row = row_indices[i]
+        current_sum += current_row
+        current_winsize += 1
+    avgs[current_idx] = current_sum / current_winsize  # final avg
+    return avgs 
+ 
+
              
 clump = partial(move_forward, clump_cols)
 clump_vert = partial(run_forever, clump)
@@ -329,13 +326,25 @@ def frame_maker(effects):
 def clump_dark(img, percentile=4.0):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
-    dark = L < np.percentile(L, 6.0)
+    dark = L < 5
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(dark) / dark.size))
     travel = (1,)
     vert = clump_vert(img, dark, travel)
     horz = clump_horz(img, dark, travel)
-    return zip_effects(img, horz, vert)
+    yield from zip_effects(img, horz, vert)
+
+
+def disperse_light(img):
+    hsl = nphusl.to_husl(img)
+    H, _, L = (hsl[..., n] for n in range(3))
+    light = L > 80
+    logging.info("Selection ratio: {:1.1f}%".format(
+                 100 * np.count_nonzero(light) / light.size))
+    travel = (1,)
+    vert = disperse_vert(img, light, travel)
+    horz = disperse_horz(img, light, travel)
+    yield from zip_effects(img, horz, vert)
 
 
 def clump_hues(img):
@@ -347,7 +356,7 @@ def clump_hues(img):
     def effects():
         for selection in select_ranges(H, 50, light):
             yield clump_vert(img, selection, travel)
-        yield slide_img_horz(img, 1)
+#        yield slide_img_horz(img, 1)
 
     yield from zip_effects(img, *effects())
 
@@ -382,11 +391,11 @@ def blueb(img):
 if __name__ == "__main__":
     infile, outfile = sys.argv[1: 3]
     img, metadata = imread(infile, return_metadata=True)
-    frames = clump_hues(img)
+    frames = clump_dark(img)
     make_frame = frame_maker(frames)
     animation = VideoClip(make_frame, duration=6)
     animation.write_videofile(outfile, fps=24, audio=False, threads=2,
-                              preset="fast")
+                              preset="ultrafast")
     imwrite("_{}_last.jpg".format("swirl"), img, metadata=metadata,
             opts={"quality": 100})
 
