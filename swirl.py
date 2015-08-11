@@ -16,7 +16,6 @@ import numpy as np
 from moviepy.editor import VideoClip
 import nphusl
 from swirlop import chunk_select, avg_col_height
-import numba
 
 
 logging.basicConfig(level=logging.INFO)
@@ -179,29 +178,6 @@ def clump_cols(img, select, moves):
         for start, stop in chunk_select(cols_to_move):
             yield img[:, start: stop], travel
             yield select[:, start: stop], travel
-
-
-@numba.autojit
-def __avg_col_height(col_indices, row_indices, cols):
-    avgs = np.empty(cols.shape[0], dtype=np.int)
-    current_col = col_indices[0]
-    current_idx = 0
-    current_sum = 0
-    current_winsize = 0
-    current_row = 0
-    for i in range(col_indices.shape[0]):
-        if current_col != col_indices[i]:
-            current_col = col_indices[i]
-            avgs[current_idx] = current_sum / current_winsize
-            current_sum = 0
-            current_winsize = 0
-            current_idx += 1
-        current_row = row_indices[i]
-        current_sum += current_row
-        current_winsize += 1
-    avgs[current_idx] = current_sum / current_winsize  # final avg
-    return avgs 
- 
 
              
 clump = partial(move_forward, clump_cols)
