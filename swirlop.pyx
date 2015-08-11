@@ -11,6 +11,7 @@ ctypedef np.int_t DTYPE_t
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
+@cython.nonecheck(False)
 def chunk_select(np.ndarray indices):
     """Generate contiguous chunks of indices in tuples of
     (start_index, stop_index) where stop_index is not inclusive"""
@@ -38,6 +39,7 @@ def chunk_select(np.ndarray indices):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
+@cython.nonecheck(False)
 def avg_col_height(np.ndarray[DTYPE_t, ndim=1] col_indices,
                    np.ndarray[DTYPE_t, ndim=1] row_indices,
                    np.ndarray[DTYPE_t, ndim=1] cols):
