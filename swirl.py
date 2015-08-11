@@ -98,7 +98,6 @@ def flipped(fn):
     return wrapper
 
 
-@profile
 def run_forever(fn, img, *args, **kwargs):
     while True:
         fn(img, *args, **kwargs)
@@ -124,7 +123,6 @@ move_forward = partial(mover, move_chunks)
 move_backward = partial(mover, move_chunks_back)
 
 
-@profile
 def clump_cols(img, select, moves):
     #select = select.astype(np.uint8)
     index_data = column_avgs(select.swapaxes(0, 1).astype(np.uint8))
