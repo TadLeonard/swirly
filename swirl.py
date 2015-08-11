@@ -15,7 +15,8 @@ from imread import imread, imwrite
 import numpy as np
 from moviepy.editor import VideoClip
 import nphusl
-from swirlop import chunk_select, column_avgs
+from swirlop import chunk_select, column_avgs, movend
+from swirlop import move1d, move2d, move3d
 
 
 logging.basicConfig(level=logging.INFO)
@@ -81,31 +82,11 @@ def select(*selections):
     sel = np.ones(selections[0].shape[:2], dtype=np.bool)
     for sub_select in selections:
         sel = np.logical_and(sel, sub_select)
-    return sel
+    return sel.astype(np.uint8)
 
 
 ################
 # Moving pixels
-
-
-@profile
-def move(img, travel):
-    """Shift `img` a distance of `travel` in the positive direction.
-    The array wraps around, so the last pixels will end up being
-    the first pixels."""
-    # NOTE: This copy is needed. Doing a backwards slice assignment is a good
-    # workaround for an in place shift (numpy.roll creates a copy!), but it
-    # is a real hack. Backwards slice assignment will work with c array
-    # ordering, for example, but will break for Fortran style arrays.
-    if travel < 0:
-        tail = img[:-travel].copy()
-        img[:travel] = img[-travel:]
-        img[travel:] = tail
-    else:
-        tail = img[-travel:].copy()  # pimgxel array wraps around
-        img[travel:] = img[:-travel]  # move bulk of pimgxels
-        img[:travel] = tail  # move the saved `taimgl` imgnto vacated space
-    return img
 
 
 def flipped(fn):
@@ -131,7 +112,7 @@ def mover(transform, fn, *args, **kwargs):
 @profile
 def move_chunks(moves):
     for arr, travel in moves:
-        move(arr, travel)
+        movend(arr, travel)
 
 
 def move_chunks_back(moves):
@@ -145,6 +126,7 @@ move_backward = partial(mover, move_chunks_back)
 
 @profile
 def clump_cols(img, select, moves):
+    #select = select.astype(np.uint8)
     index_data = column_avgs(select.swapaxes(0, 1).astype(np.uint8))
     col_avgs, cols, total_avg = index_data 
     if not cols:
@@ -152,17 +134,17 @@ def clump_cols(img, select, moves):
     col_avgs = np.array(col_avgs, dtype=np.int)
     cols = np.array(cols, dtype=np.int)
 
+    # create array of random choices from the given moves
     if len(moves) == 1:
         travels = np.zeros((cols.size,))
         travels[:] = moves[0]
     else: 
         travels = np.random.choice(moves, cols.size)
 
-    diff = col_avgs - total_avg
-    abs_diff = np.abs(diff)
-
     # when columns are as close the median as they can be, we want them to
     # gradually move with a random choice between moving 0 or 1 pixels
+    diff = col_avgs - total_avg
+    abs_diff = np.abs(diff)
     stuck = abs_diff < travels
     travels[stuck] = np.random.choice((0, 1), np.count_nonzero(stuck))
     travels[diff > 0] *= -1  # reverse row travel dir if row avg < total avg
@@ -237,8 +219,10 @@ def slide_img_horz(img, travel):
 # Creating animations
     
 
-def read_img(path):
-    img = np.squeeze(imread(path))
+def read_img(path, return_metadata=False):
+    img = np.squeeze(imread(path, return_metadata=return_metadata))
+    if return_metadata:
+        img, metadata = img
     if len(img.shape) == 2:
         _img = np.ndarray(img.shape + (3,), dtype=img.dtype)
         _img[:] = img[..., None]
@@ -248,7 +232,10 @@ def read_img(path):
         img = img[..., :3]
     logging.info("Initial image shape: {}".format(img.shape))
     logging.info("Working image shape: {}".format(img.shape))
-    return img
+    if return_metadata:
+        return img, metadata
+    else:
+        return img
 
 
 def handle_kb_interrupt(fn):
@@ -302,7 +289,7 @@ def frame_maker(effects):
 def clump_dark(img, percentile=4.0):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
-    dark = L < 5
+    dark = select(L < 5)
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(dark) / dark.size))
     travel = (1,)
@@ -314,7 +301,7 @@ def clump_dark(img, percentile=4.0):
 def disperse_light(img):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
-    light = L > 80
+    light = select(L > 80)
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(light) / light.size))
     travel = (1,)
@@ -326,7 +313,7 @@ def disperse_light(img):
 def clump_hues(img):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
-    light = L > 1
+    light = select(L > 1)
     travel = (1,)
     
     def effects():
@@ -366,7 +353,7 @@ def blueb(img):
 
 if __name__ == "__main__":
     infile, outfile = sys.argv[1: 3]
-    img, metadata = imread(infile, return_metadata=True)
+    img, metadata = read_img(infile, return_metadata=True)
     frames = clump_dark(img)
     make_frame = frame_maker(frames)
     animation = VideoClip(make_frame, duration=6)
