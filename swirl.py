@@ -15,7 +15,7 @@ from imread import imread, imwrite
 import numpy as np
 from moviepy.editor import VideoClip
 import nphusl
-from swirlop import chunk_select, avg_col_height, nonzero2d
+from swirlop import chunk_select, column_avgs
 
 
 logging.basicConfig(level=logging.INFO)
@@ -145,7 +145,7 @@ move_backward = partial(mover, move_chunks_back)
 
 @profile
 def clump_cols(img, select, moves):
-    index_data = nonzero2d(select.swapaxes(0, 1).astype(np.uint8))
+    index_data = column_avgs(select.swapaxes(0, 1).astype(np.uint8))
     col_avgs, cols, total_avg = index_data 
     if not cols:
         return  # no work to do
