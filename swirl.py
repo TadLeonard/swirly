@@ -124,7 +124,6 @@ move_backward = partial(mover, move_chunks_back)
 
 
 def clump_cols(img, select, moves):
-    #select = select.astype(np.uint8)
     index_data = column_avgs(select.swapaxes(0, 1).astype(np.uint8))
     col_avgs, cols, total_avg = index_data 
     if not cols:
@@ -355,7 +354,7 @@ if __name__ == "__main__":
     frames = clump_dark(img)
     make_frame = frame_maker(frames)
     animation = VideoClip(make_frame, duration=6)
-    animation.write_videofile(outfile, fps=24, audio=False, threads=2,
+    animation.write_videofile(outfile, fps=24, audio=False, threads=1,
                               preset="ultrafast")
     imwrite("_{}_last.jpg".format("swirl"), img, metadata=metadata,
             opts={"quality": 100})

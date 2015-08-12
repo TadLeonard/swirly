@@ -1,6 +1,5 @@
 import numpy as np
 cimport numpy as np
-
 import cython
 from cython.parallel import prange
 
@@ -78,31 +77,28 @@ cpdef void movend(np.ndarray img, int travel):
         move2d(img, travel)
     else:
         move1d(img, travel)
-       
+
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
-cpdef inline void move3d(np.ndarray[np.uint8_t, ndim=3] img, unsigned int travel):
-    cdef unsigned int i, j, c, x
-    cdef unsigned int cols = img.shape[0]
-    cdef unsigned int rows = img.shape[1]
-    cdef unsigned int chans = img.shape[2]
+cpdef inline void move3d(np.ndarray[np.uint8_t, ndim=3] img, int travel):
+    cdef int i, j, c, x
+    cdef int cols = img.shape[0]
+    cdef int rows = img.shape[1]
+    cdef int chans = img.shape[2]
     cdef np.ndarray[np.uint8_t, ndim=3] tail
-    tail = np.zeros((travel, rows, chans), dtype=np.uint8)
-#    for i in prange(rows, num_threads=2, nogil=True):
+    tail = np.empty((travel, rows, chans), dtype=np.uint8)
     for i in range(rows):
         for j in range(travel):  # cuts into cols
-            x = <unsigned int>(j + cols - travel)
+            x = j + cols - travel
             for c in range(chans):
                 tail[j, i, c] = img[x, i, c]
-#    for i in prange(rows, nogil=True, num_threads=1):
     for i in range(rows):
         for j in range(cols-1, travel-1, -1):
-            x = <unsigned int>(j - travel)
+            x = j - travel
             for c in range(chans):
                 img[j, i, c] = img[x, i, c]
-#    for i in prange(rows, num_threads=2, nogil=True):
     for i in range(rows):
         for j in range(travel):
             for c in range(chans):
@@ -112,20 +108,19 @@ cpdef inline void move3d(np.ndarray[np.uint8_t, ndim=3] img, unsigned int travel
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
-cpdef inline void move2d(np.ndarray[np.uint8_t, ndim=2] img, unsigned int travel):
-    cdef unsigned int i, j, x 
-    cdef unsigned int cols = img.shape[0]
-    cdef unsigned int rows = img.shape[1]
+cpdef inline void move2d(np.ndarray[np.uint8_t, ndim=2] img, int travel):
+    cdef int i, j, x 
+    cdef int cols = img.shape[0]
+    cdef int rows = img.shape[1]
     cdef np.ndarray[np.uint8_t, ndim=2] tail
-    tail = np.zeros((travel, rows), dtype=np.uint8)
+    tail = np.empty((travel, rows), dtype=np.uint8)
     for i in range(rows):
         for j in range(travel):
-            x = <unsigned int>(j + cols - travel)
+            x = j + cols - travel
             tail[j, i] = img[x, i]
-#    for i in prange(rows, num_threads=2, nogil=True):
     for i in range(rows):
         for j in range(cols-1, travel-1, -1):
-            x = <unsigned int>(j - travel)
+            x = j - travel
             img[j, i] = img[x, i]
     for i in range(rows):
         for j in range(travel):
@@ -135,17 +130,16 @@ cpdef inline void move2d(np.ndarray[np.uint8_t, ndim=2] img, unsigned int travel
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
-cpdef inline void move1d(np.ndarray[np.uint8_t, ndim=1] img, unsigned int travel):
-    cdef unsigned int i, x
-    cdef unsigned int cols = img.shape[0]
+cpdef inline void move1d(np.ndarray[np.uint8_t, ndim=1] img, int travel):
+    cdef int i, x
+    cdef int cols = img.shape[0]
     cdef np.ndarray[np.uint8_t, ndim=1] tail
-    tail = np.zeros((travel,), dtype=np.uint8)
+    tail = np.empty((travel,), dtype=np.uint8)
     for i in range(travel):
-        x = <unsigned int>(i + cols - travel)
+        x = i + cols - travel
         tail[i] = img[x]
-#    for i in prange(cols-1, travel-1, -1, num_threads=2, nogil=True):
     for i in range(cols-1, travel-1, -1):
-        x = <unsigned int>(i - travel)
+        x = i - travel
         img[i] = img[x]
     for i in range(travel):
         img[i] = tail[i]
