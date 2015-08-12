@@ -110,8 +110,27 @@ def mover(transform, fn, *args, **kwargs):
 
 @profile
 def move_chunks(moves):
-    for arr, travel in moves:
-        movend(arr, travel)
+    for arr, travel in moves:    
+        if arr.ndim == 2 and False:
+            if travel < 0:
+                arr = arr[::-1]
+                travel = -travel
+            for a in arr:
+                move1d(a, travel)
+        else:
+            movend(arr, travel)
+
+
+#    for info in moves:
+        #img, select, cols_to_move, travel = info
+        #if travel < 0:
+        #    img = img[::-1]
+        #    select = select[::-1]
+        #    travel = -travel
+
+        #move2d(select, travel)
+        #move3d(img, travel)
+
 
 
 def move_chunks_back(moves):
@@ -128,7 +147,7 @@ def clump_cols(img, select, moves):
     col_avgs, cols, total_avg = index_data 
     if not cols:
         return  # no work to do
-    col_avgs = np.array(col_avgs, dtype=np.int)
+    col_avgs = np.array(col_avgs, dtype=np.float)
     cols = np.array(cols, dtype=np.int)
 
     # create array of random choices from the given moves
@@ -149,11 +168,12 @@ def clump_cols(img, select, moves):
     travels = travels[nz]
     cols = cols[nz]
 
-    all_travels = tuple(-m for m in moves) + moves
+    all_travels = set(-m for m in moves) ^ set(moves) ^ set((1, -1))
     for travel in all_travels:
         cols_to_move = cols[travels == travel]
         if not cols_to_move.size:
             continue
+#        yield img, select, cols_to_move, travel
         for start, stop in chunk_select(cols_to_move):
             yield img[:, start: stop], travel
             yield select[:, start: stop], travel
@@ -241,7 +261,8 @@ def handle_kb_interrupt(fn):
         try:
             yield from fn(*args, **kwargs)
         except KeyboardInterrupt:
-            raise StopIteration
+            return  # no longer raise StopIteration in 3.5+
+            #raise StopIteration
     return wrapped
 
 
@@ -289,7 +310,7 @@ def clump_dark(img, percentile=4.0):
     dark = select(L < 5)
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(dark) / dark.size))
-    travel = (1,)
+    travel = (5,)
     vert = clump_vert(img, dark, travel)
     horz = clump_horz(img, dark, travel)
     yield from zip_effects(img, horz, vert)
@@ -353,7 +374,7 @@ if __name__ == "__main__":
     img, metadata = read_img(infile, return_metadata=True)
     frames = clump_dark(img)
     make_frame = frame_maker(frames)
-    animation = VideoClip(make_frame, duration=6)
+    animation = VideoClip(make_frame, duration=60)
     animation.write_videofile(outfile, fps=24, audio=False, threads=1,
                               preset="ultrafast")
     imwrite("_{}_last.jpg".format("swirl"), img, metadata=metadata,
