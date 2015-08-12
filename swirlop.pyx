@@ -40,11 +40,11 @@ def column_avgs(np.ndarray[np.uint8_t, ndim=2] select):
     total column index average and the unique set of rows involved"""
     cdef list avgs = []  # avg col idx per row idx
     cdef list rowset = []  # set of non empty rows
-    cdef long total_avg   # total avg col idx
-    cdef long total_sum = 0
+    cdef float total_avg   # total avg col idx
+    cdef float total_sum = 0
     cdef int total_count = 0
     cdef int i, j
-    cdef long current_sum = 0
+    cdef float current_sum = 0
     cdef int current_winsize = 0
     
     for i in range(select.shape[0]):
@@ -108,6 +108,20 @@ cpdef inline void move3d(np.ndarray[np.uint8_t, ndim=3] img, int travel):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
+cpdef inline void move2d_many(
+        np.ndarray[np.uint8_t, ndim=3] img,
+        np.ndarray[np.int_t, ndim=1] cols_to_move,
+        int travel):
+    tails = np.empty((cols_to_move, travel), dtype=np.uint8)
+   # for i in range(cols_to_move.shape[0]):
+   #     tails[i] = make_tail_1d(
+        
+    return
+
+ 
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.nonecheck(False)
 cpdef inline void move2d(np.ndarray[np.uint8_t, ndim=2] img, int travel):
     cdef int i, j, x 
     cdef int cols = img.shape[0]
@@ -131,17 +145,27 @@ cpdef inline void move2d(np.ndarray[np.uint8_t, ndim=2] img, int travel):
 @cython.wraparound(False)
 @cython.nonecheck(False)
 cpdef inline void move1d(np.ndarray[np.uint8_t, ndim=1] img, int travel):
-    cdef int i, x
+    cdef int i
     cdef int cols = img.shape[0]
     cdef np.ndarray[np.uint8_t, ndim=1] tail
-    tail = np.empty((travel,), dtype=np.uint8)
-    for i in range(travel):
-        x = i + cols - travel
-        tail[i] = img[x]
+    tail = make_tail_1d(img, travel, cols)
     for i in range(cols-1, travel-1, -1):
-        x = i - travel
-        img[i] = img[x]
+        img[i] = img[i - travel]
     for i in range(travel):
         img[i] = tail[i]
 
- 
+  
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.nonecheck(False)
+cdef inline np.ndarray make_tail_1d(np.ndarray[np.uint8_t, ndim=1] img,
+                                    int travel, int cols):
+    cdef np.ndarray[np.uint8_t, ndim=1] tail
+    cdef int i
+    tail = np.empty((travel,), dtype=np.uint8)
+    for i in range(travel):
+        tail[i] = img[i + cols - travel]
+    return tail
+   
+
+
