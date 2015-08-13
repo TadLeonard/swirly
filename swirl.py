@@ -78,11 +78,11 @@ def get_channel(img, filter_hsl, avg_husl):
     return idx_select
 
 
-def select(*selections):
+def select(img, *selections):
     sel = np.ones(selections[0].shape[:2], dtype=np.bool)
     for sub_select in selections:
         sel = np.logical_and(sel, sub_select)
-    return sel.astype(np.uint8)
+    return imgmask(img, sel.astype(np.uint8))
 
 
 ################
@@ -90,18 +90,18 @@ def select(*selections):
 
 
 def flipped(fn):
-    def wrapper(img, select, *args, **kwargs):
-        _img = np.rot90(img)
-        _select = np.rot90(select)
-        for _ in fn(_img, _select, *args, **kwargs):
+    def wrapper(masked_img, *args, **kwargs):
+        img, select = masked_img
+        _rotated = imgmask(np.rot90(img), np.rot90(select))
+        for _ in fn(_rotated, *args, **kwargs):
             yield img
     return wrapper
 
 
-def run_forever(fn, img, *args, **kwargs):
+def run_forever(fn, masked_img, *args, **kwargs):
     while True:
-        fn(img, *args, **kwargs)
-        yield img
+        fn(masked_img, *args, **kwargs)
+        yield masked_img.img
 
 
 def mover(transform, fn, *args, **kwargs):
@@ -123,33 +123,73 @@ move_forward = partial(mover, move_chunks)
 move_backward = partial(mover, move_chunks_back)
 
 
-def clump_cols(img, select, moves):
-    index_data = column_avgs(select.swapaxes(0, 1).astype(np.uint8))
-    col_avgs, cols, total_avg = index_data 
-    if not cols:
-        return  # no work to do
-    col_avgs = np.array(col_avgs, dtype=np.float)
-    cols = np.array(cols, dtype=np.int)
+imgmask = namedtuple("img", ["img", "select"])
 
+
+@profile
+def clump_cols(masked_img, moves):
+    col_avgs, total_avg, cols = _get_column_data(masked_img.select)
+    if not cols.size:
+        return  # no work to do
+    travels = _prepare_column_travels(cols, moves)
+    clumped = _get_clumped_cols(col_avgs, total_avg, travels)
+    travels, cols = _travel_direction(clumped, travels, cols)
+    yield from _gen_contiguous_moves(masked_img, travels, cols, moves)
+
+
+@profile
+def disperse_cols(masked_img, moves):
+    col_avgs, total_avg, cols = _get_column_data(masked_img.select)
+    if not cols.size:
+        return  # no work to do
+    travels = _prepare_column_travels(cols, moves)
+    max_distance = masked_img.img.shape[1] // 2
+    dispersed = _get_dispersed_cols(col_avgs, total_avg, travels, max_distance)
+    travels, cols = _travel_direction(dispersed, travels, cols)
+    yield from _gen_contiguous_moves(masked_img, travels, cols, moves)
+
+
+def _get_column_data(select):
+    index_data = column_avgs(select.swapaxes(0, 1).astype(np.uint8))
+    col_avgs, total_avg = index_data 
+    cols = np.nonzero(col_avgs >= 0)[0]
+    col_avgs = col_avgs[cols]
+    return col_avgs, total_avg, cols
+
+
+def _prepare_column_travels(cols, moves):
     # create array of random choices from the given moves
     if len(moves) == 1:
         travels = np.zeros((cols.size,))
         travels[:] = moves[0]
     else: 
         travels = np.random.choice(moves, cols.size)
+    return travels
 
-    # when columns are as close the median as they can be, we want them to
-    # gradually move with a random choice between moving 0 or 1 pixels
+
+def _get_clumped_cols(col_avgs, total_avg, travels):
     diff = col_avgs - total_avg
     abs_diff = np.abs(diff)
-    stuck = abs_diff < travels
+    return abs_diff < travels, diff
+
+
+def _get_dispersed_cols(col_avgs, total_avg, travels, max_distance):
+    diff = col_avgs - total_avg
+    abs_diff = np.abs(diff)
+    return np.abs(abs_diff - max_distance) < travels, diff
+    
+
+def _travel_direction(stopped, travels, cols):
+    stuck, diff = stopped
     travels[stuck] = np.random.choice((0, 1), np.count_nonzero(stuck))
     travels[diff > 0] *= -1  # reverse row travel dir if row avg < total avg
     nz = np.nonzero(travels)
-    travels = travels[nz]
-    cols = cols[nz]
+    return travels[nz], cols[nz]
 
-    all_travels = set(-m for m in moves) ^ set(moves) ^ set((1, -1))
+
+def _gen_contiguous_moves(masked_img, travels, cols, moves):
+    img, select = masked_img
+    all_travels = set(-m for m in moves) | set(moves) | set((1, -1))
     for travel in all_travels:
         cols_to_move = cols[travels == travel]
         if not cols_to_move.size:
@@ -158,29 +198,30 @@ def clump_cols(img, select, moves):
         for start, stop in chunk_select(cols_to_move):
             yield img[:, start: stop], select[:, start: stop], travel
 
-             
+
 clump = partial(move_forward, clump_cols)
 clump_vert = partial(run_forever, clump)
 clump_horz = flipped(clump_vert)
-disperse = partial(move_backward, clump_cols)
+disperse = partial(move_backward, disperse_cols)
 disperse_vert = partial(run_forever, disperse)
 disperse_horz = flipped(disperse_vert)
 
 
-def fuzz_horz(img, select, moves=(0, 1)):
+def fuzz_horz(masked_img, moves=(0, 1)):
     moves = tuple(moves)
     fuzz_moves = tuple(-m for m in moves if m) + moves
     while True:
-        rows = np.nonzero(np.any(select, axis=1))[0]
-        fuzz_rows(img, select, rows, fuzz_moves) 
-        yield img
+        rows = np.nonzero(np.any(masked_img.select, axis=1))[0]
+        fuzz_rows(masked_img, rows, fuzz_moves) 
+        yield masked_img.img
 
 
 fuzz_vert = flipped(fuzz_horz)
 
 
-def fuzz_rows(img, select, rows, moves):
+def fuzz_rows(masked_img, rows, moves):
     travels = np.random.choice(moves, len(rows))
+    img, select = masked_img
     for row, travel in zip(rows, travels):
         if not travel:
             continue
@@ -188,13 +229,13 @@ def fuzz_rows(img, select, rows, moves):
         move(select[row, :], travel)
 
 
-def slide_horz(img, select, travel, moves):
+def slide_horz(masked_img, travel, moves):
     while True:
-        rows = np.nonzero(np.any(select, axis=1))[0]
-        slide_rows(img, select, rows, moves)
+        rows = np.nonzero(np.any(masked_img.select, axis=1))[0]
+        slide_rows(masked_img, rows, moves)
 
 
-def slide_rows(img, select, rows, moves):
+def slide_rows(masked_img, rows, moves):
     travels = np.random.choice(moves, rows.size)
     for travel in moves:
         pass
@@ -247,21 +288,21 @@ def handle_kb_interrupt(fn):
 
 
 @handle_kb_interrupt
-def zip_effects(img, *effects):
-    yield img
+def zip_effects(first_img, *effects):
+    yield first_img
     for imgs in zip(*effects):
         yield imgs[-1]
 
 
 @handle_kb_interrupt
-def interleave_effects(img, *effects,
+def interleave_effects(first_img, *effects,
                        repeats=1, effects_per_frame=1, rand=False):
+    yield first_img
     effects = list(effects)
-    yield img
-    yield from _iterleave(img, effects, repeats, effects_per_frame, rand)
+    yield from _iterleave(effects, repeats, effects_per_frame, rand)
 
 
-def _iterleave(img, effects, repeats, effects_per_frame, rand):
+def _iterleave(effects, repeats, effects_per_frame, rand):
     count = 0
     prepare = random.shuffle if rand else lambda x: x
     while True:
@@ -287,19 +328,22 @@ def frame_maker(effects):
 def clump_dark(img, percentile=4.0):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
-    dark = select(L < 5)
+    dark = select(img, L < 5)
+    sel = dark.select
     logging.info("Selection ratio: {:1.1f}%".format(
-                 100 * np.count_nonzero(dark) / dark.size))
-    travel = (5,)
-    vert = clump_vert(img, dark, travel)
-    horz = clump_horz(img, dark, travel)
+                 100 * np.count_nonzero(sel) / sel.size))
+    travel = (1,)
+    vert = clump_vert(dark, travel)
+    horz = clump_horz(dark, travel)
+#    vert = disperse_vert(dark, travel)
+#    horz = disperse_horz(dark, travel)
     yield from zip_effects(img, horz, vert)
 
 
 def disperse_light(img):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
-    light = select(L > 80)
+    light = select(img, L > 80)
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(light) / light.size))
     travel = (1,)
@@ -311,24 +355,23 @@ def disperse_light(img):
 def clump_hues(img):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
-    light = select(L > 1)
+    light = select(img, L > 1)
     travel = (1,)
     
     def effects():
         for selection in select_ranges(H, 50, light):
-            yield clump_vert(img, selection, travel)
-#        yield slide_img_horz(img, 1)
+            yield clump_vert(selection, travel)
 
     yield from zip_effects(img, *effects())
 
 
 def select_ranges(select_by, percentile, *extra_filters):
-    selectable = select(*extra_filters) 
-    selectable_values = select_by[selectable]
+    selectable = select(img, *extra_filters) 
+    selectable_values = select_by[selectable.select]
     min_val = 0
     for max_pct in range(percentile, 100 + percentile, percentile):
         max_val = np.percentile(selectable_values, max_pct)
-        selection = select(selectable,
+        selection = select(selectable.select,
                            select_by < max_val, select_by > min_val)
         yield selection
         min_val = max_val
@@ -337,16 +380,16 @@ def select_ranges(select_by, percentile, *extra_filters):
 def blueb(img):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
-    dark = L < 5
-    bright = L > 80
+    dark = select(img, L < 5)
+    bright = select(img, L > 80)
+    blue = select(img, H > 240, H < 290)
     travel = (1,)
-    blue = select(H > 240, H < 290)
     
-    hblue = clump_horz(img, bright, travel)
-    vblue = clump_vert(img, bright, travel)
-    hdark = disperse_horz(img, dark, travel)
-    vdark = disperse_vert(img, dark, travel)
-    yield from zip_effects(img, hblue, vblue, hdark, vdark)
+    hblue = clump_horz(bright, travel)
+    vblue = clump_vert(bright, travel)
+    hdark = disperse_horz(dark, travel)
+    vdark = disperse_vert(dark, travel)
+    yield from zip_effects(hblue, vblue, hdark, vdark)
 
 
 if __name__ == "__main__":
