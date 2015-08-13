@@ -137,18 +137,6 @@ def clump_cols(masked_img, moves):
     yield from _gen_contiguous_moves(masked_img, travels, cols, moves)
 
 
-@profile
-def disperse_cols(masked_img, moves):
-    col_avgs, total_avg, cols = _get_column_data(masked_img.select)
-    if not cols.size:
-        return  # no work to do
-    travels = _prepare_column_travels(cols, moves)
-    max_distance = masked_img.img.shape[1] // 2
-    dispersed = _get_dispersed_cols(col_avgs, total_avg, travels, max_distance)
-    travels, cols = _travel_direction(dispersed, travels, cols)
-    yield from _gen_contiguous_moves(masked_img, travels, cols, moves)
-
-
 def _get_column_data(select):
     index_data = column_avgs(select.swapaxes(0, 1).astype(np.uint8))
     col_avgs, total_avg = index_data 
@@ -173,12 +161,6 @@ def _get_clumped_cols(col_avgs, total_avg, travels):
     return abs_diff < travels, diff
 
 
-def _get_dispersed_cols(col_avgs, total_avg, travels, max_distance):
-    diff = col_avgs - total_avg
-    abs_diff = np.abs(diff)
-    return np.abs(abs_diff - max_distance) < travels, diff
-    
-
 def _travel_direction(stopped, travels, cols):
     stuck, diff = stopped
     travels[stuck] = np.random.choice((0, 1), np.count_nonzero(stuck))
@@ -202,7 +184,7 @@ def _gen_contiguous_moves(masked_img, travels, cols, moves):
 clump = partial(move_forward, clump_cols)
 clump_vert = partial(run_forever, clump)
 clump_horz = flipped(clump_vert)
-disperse = partial(move_backward, disperse_cols)
+disperse = partial(move_backward, clump_cols)
 disperse_vert = partial(run_forever, disperse)
 disperse_horz = flipped(disperse_vert)
 
@@ -332,11 +314,11 @@ def clump_dark(img, percentile=4.0):
     sel = dark.select
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(sel) / sel.size))
-    travel = (1,)
+    travel = (1,2,3,4,5)
     vert = clump_vert(dark, travel)
     horz = clump_horz(dark, travel)
-#    vert = disperse_vert(dark, travel)
-#    horz = disperse_horz(dark, travel)
+    #vert = disperse_vert(dark, travel)
+    #horz = disperse_horz(dark, travel)
     yield from zip_effects(img, horz, vert)
 
 
