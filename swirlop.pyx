@@ -38,28 +38,31 @@ def column_avgs(np.ndarray[np.uint8_t, ndim=2] select):
     """Computes the average column index for each row
     in a 2D boolean mask array. Useful byproducts are the
     total column index average and the unique set of rows involved"""
-    cdef list avgs = []  # avg col idx per row idx
-    cdef list rowset = []  # set of non empty rows
+    cdef int nrows = select.shape[0]
+    cdef int ncols = select.shape[1] 
+    cdef np.ndarray[np.float64_t, ndim=1] avgs
+    avgs = np.empty((nrows,), dtype=np.float64)
+    avgs[:] = -1.0
     cdef float total_avg   # total avg col idx
     cdef float total_sum = 0
     cdef int total_count = 0
     cdef int i, j
     cdef float current_sum = 0
     cdef int current_winsize = 0
+    cdef unsigned int value
     
-    for i in range(select.shape[0]):
+    for i in range(nrows):
         current_sum = current_winsize = 0
-        for j in range(select.shape[1]):
-            if select[i, j]:
-                current_sum += j
-                current_winsize += 1
+        for j in range(ncols):
+            value = <unsigned int>(select[i, j]) 
+            current_sum += (j * value)
+            current_winsize += (1 * value)
+        total_count += current_winsize
+        total_sum += current_sum
         if current_winsize != 0:
-            total_count += current_winsize
-            total_sum += current_sum
-            avgs.append(current_sum / current_winsize)
-            rowset.append(i)
+            avgs[i] = current_sum / current_winsize
     total_avg = total_sum / total_count 
-    return avgs, rowset, total_avg
+    return avgs, total_avg
     
 
 @cython.boundscheck(False)
