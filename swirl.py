@@ -15,7 +15,7 @@ from imread import imread, imwrite
 import numpy as np
 from moviepy.editor import VideoClip
 import nphusl
-from swirlop import chunk_select, column_avgs, movend
+from swirlop import chunk_select, column_avgs, move
 from swirlop import move1d, move2d, move3d
 
 
@@ -110,31 +110,12 @@ def mover(transform, fn, *args, **kwargs):
 
 @profile
 def move_chunks(moves):
-    for arr, travel in moves:    
-        if arr.ndim == 2 and False:
-            if travel < 0:
-                arr = arr[::-1]
-                travel = -travel
-            for a in arr:
-                move1d(a, travel)
-        else:
-            movend(arr, travel)
-
-
-#    for info in moves:
-        #img, select, cols_to_move, travel = info
-        #if travel < 0:
-        #    img = img[::-1]
-        #    select = select[::-1]
-        #    travel = -travel
-
-        #move2d(select, travel)
-        #move3d(img, travel)
-
+    for img, select, travel in moves:    
+        move(img, select, travel)
 
 
 def move_chunks_back(moves):
-    backward_moves = ((arr, -travel) for arr, travel in moves)
+    backward_moves = ((a, b, -travel) for a, b, travel in moves)
     return move_chunks(backward_moves)
 
 
@@ -175,8 +156,7 @@ def clump_cols(img, select, moves):
             continue
 #        yield img, select, cols_to_move, travel
         for start, stop in chunk_select(cols_to_move):
-            yield img[:, start: stop], travel
-            yield select[:, start: stop], travel
+            yield img[:, start: stop], select[:, start: stop], travel
 
              
 clump = partial(move_forward, clump_cols)

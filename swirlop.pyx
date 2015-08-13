@@ -65,18 +65,18 @@ def column_avgs(np.ndarray[np.uint8_t, ndim=2] select):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
-cpdef void movend(np.ndarray img, int travel):
+def move(
+        np.ndarray[np.uint8_t, ndim=3] img,
+        np.ndarray[np.uint8_t, ndim=2] select,
+        int travel):
+    """Moves slices of an image's columns in a certain direction
+    by `select` steps. Moves the 2D boolean selection mask along with it."""
     if travel < 0:
         img = img[::-1]
+        select = select[::-1]
         travel = -travel
-
-    cdef int nd = img.ndim
-    if nd == 3:
-        move3d(img, travel)
-    elif nd == 2:
-        move2d(img, travel)
-    else:
-        move1d(img, travel)
+    move3d(img, travel)
+    move2d(select, travel)
 
 
 @cython.boundscheck(False)
@@ -141,6 +141,17 @@ cpdef inline void move2d(np.ndarray[np.uint8_t, ndim=2] img, int travel):
             img[j, i] = tail[j, i]
 
 
+#cpdef void move_3d_row(np.ndarray[np.uint8_t, ndim=2] img, int travel):
+#    cdef int i, c
+#    def cols = img.shape[0]
+#    def chans = img.shape[1]
+#    cpdef np.ndarray[np.uint8_t, ndim=2] tail
+#    tail = np.empty((travel, rows), dtype=np.uint8)
+#    for i in range(rows):
+#        for i in range(travel):
+#            tail[
+
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
@@ -148,24 +159,12 @@ cpdef inline void move1d(np.ndarray[np.uint8_t, ndim=1] img, int travel):
     cdef int i
     cdef int cols = img.shape[0]
     cdef np.ndarray[np.uint8_t, ndim=1] tail
-    tail = make_tail_1d(img, travel, cols)
+    tail = np.empty((travel,), dtype=np.uint8)
+    for i in range(travel):
+        tail[i] = img[i + cols - travel]
     for i in range(cols-1, travel-1, -1):
         img[i] = img[i - travel]
     for i in range(travel):
         img[i] = tail[i]
 
-  
-@cython.boundscheck(False)
-@cython.wraparound(False)
-@cython.nonecheck(False)
-cdef inline np.ndarray make_tail_1d(np.ndarray[np.uint8_t, ndim=1] img,
-                                    int travel, int cols):
-    cdef np.ndarray[np.uint8_t, ndim=1] tail
-    cdef int i
-    tail = np.empty((travel,), dtype=np.uint8)
-    for i in range(travel):
-        tail[i] = img[i + cols - travel]
-    return tail
-   
-
-
+ 
