@@ -108,7 +108,6 @@ def mover(transform, fn, *args, **kwargs):
     return transform(fn(*args, **kwargs))
 
 
-@profile
 def move_chunks(moves):
     for img, select, travel in moves:    
         move(img, select, travel)
@@ -126,7 +125,6 @@ move_backward = partial(mover, move_chunks_back)
 imgmask = namedtuple("img", ["img", "select"])
 
 
-@profile
 def clump_cols(masked_img, moves):
     col_avgs, total_avg, cols = _get_column_data(masked_img.select)
     if not cols.size:
