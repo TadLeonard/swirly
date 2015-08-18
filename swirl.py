@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+import argparse
 import sys
 import random
 import logging
@@ -15,8 +16,7 @@ from imread import imread, imwrite
 import numpy as np
 from moviepy.editor import VideoClip
 import nphusl
-from swirlop import chunk_select, column_avgs, move
-from swirlop import move1d, move2d, move3d
+from swirlop import chunk_select, column_avgs, move_rubix
 
 
 logging.basicConfig(level=logging.INFO)
@@ -78,11 +78,21 @@ def get_channel(img, filter_hsl, avg_husl):
     return idx_select
 
 
-def select(img, *selections):
-    sel = np.ones(selections[0].shape[:2], dtype=np.bool)
+_or = np.logical_or
+_and = np.logical_and
+
+
+def _choose(chooser, starter, img, *selections):
+    sel = starter(selections[0].shape[:2], dtype=np.bool)
     for sub_select in selections:
-        sel = np.logical_and(sel, sub_select)
+        if isinstance(sub_select, imgmask):
+            sub_select = sub_select.select
+        sel = chooser(sel, sub_select)
     return imgmask(img, sel.astype(np.uint8))
+
+
+mask = partial(_choose, np.logical_and, np.ones)
+mask_or = partial(_choose, np.logical_or, np.zeros)
 
 
 ################
@@ -110,7 +120,7 @@ def mover(transform, fn, *args, **kwargs):
 
 def move_chunks(moves):
     for img, select, travel in moves:    
-        move(img, select, travel)
+        move_rubix(img, select, travel)
 
 
 def move_chunks_back(moves):
@@ -174,7 +184,6 @@ def _gen_contiguous_moves(masked_img, travels, cols, moves):
         cols_to_move = cols[travels == travel]
         if not cols_to_move.size:
             continue
-#        yield img, select, cols_to_move, travel
         for start, stop in chunk_select(cols_to_move):
             yield img[:, start: stop], select[:, start: stop], travel
 
@@ -205,25 +214,24 @@ def fuzz_rows(masked_img, rows, moves):
     for row, travel in zip(rows, travels):
         if not travel:
             continue
-        move(img[row, :], travel)
-        move(select[row, :], travel)
+        move_rubix(img[row, :], travel)
+        move_rubix(select[row, :], travel)
 
 
-def slide_horz(masked_img, travel, moves):
-    while True:
-        rows = np.nonzero(np.any(masked_img.select, axis=1))[0]
-        slide_rows(masked_img, rows, moves)
+def slide_cols(masked_img, moves):
+    cols = np.nonzero(np.any(masked_img.select, axis=1))[0]
+    travels = np.random.choice(moves, cols.size)
+    yield from _gen_contiguous_moves(masked_img, travels, cols, moves)
 
 
-def slide_rows(masked_img, rows, moves):
-    travels = np.random.choice(moves, rows.size)
-    for travel in moves:
-        pass
+slide = partial(move_backward, slide_cols)
+slide_vert = partial(run_forever, slide)
+slide_horz = flipped(slide_vert)
 
 
 def slide_img_vert(img, travel):
     while True:
-        move(img, travel)
+        move_rubix(img, travel)
         yield img
 
 
@@ -305,25 +313,20 @@ def frame_maker(effects):
 # Whole programs
 
 
-def clump_dark(img, percentile=4.0):
+def clump_dark(img):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
-    dark = select(img, L < 5)
-    sel = dark.select
-    logging.info("Selection ratio: {:1.1f}%".format(
-                 100 * np.count_nonzero(sel) / sel.size))
-    travel = (1,2,3,4,5)
+    dark = mask(img, L < 5)
+    travel = (5,)
     vert = clump_vert(dark, travel)
     horz = clump_horz(dark, travel)
-    #vert = disperse_vert(dark, travel)
-    #horz = disperse_horz(dark, travel)
     yield from zip_effects(img, horz, vert)
 
 
 def disperse_light(img):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
-    light = select(img, L > 80)
+    light = mask(img, L > 80)
     logging.info("Selection ratio: {:1.1f}%".format(
                  100 * np.count_nonzero(light) / light.size))
     travel = (1,)
@@ -335,7 +338,7 @@ def disperse_light(img):
 def clump_hues(img):
     hsl = nphusl.to_husl(img)
     H, _, L = (hsl[..., n] for n in range(3))
-    light = select(img, L > 1)
+    light = mask(img, L > 1)
     travel = (1,)
     
     def effects():
@@ -346,39 +349,41 @@ def clump_hues(img):
 
 
 def select_ranges(select_by, percentile, *extra_filters):
-    selectable = select(img, *extra_filters) 
+    selectable = mask(img, *extra_filters) 
     selectable_values = select_by[selectable.select]
     min_val = 0
     for max_pct in range(percentile, 100 + percentile, percentile):
         max_val = np.percentile(selectable_values, max_pct)
-        selection = select(selectable.select,
-                           select_by < max_val, select_by > min_val)
+        selection = mask(selectable.select,
+                         select_by < max_val, select_by > min_val)
         yield selection
         min_val = max_val
 
 
-def blueb(img):
+def slide_colors(img):
     hsl = nphusl.to_husl(img)
-    H, _, L = (hsl[..., n] for n in range(3))
-    dark = select(img, L < 5)
-    bright = select(img, L > 80)
-    blue = select(img, H > 240, H < 290)
+    H, L = hsl[..., 0], hsl[..., 2]
+    light = L > 3
+    blue = mask(img, light, H > 240, H < 290)
+    red = mask(img, light, _or(H < 40, H > 320))
+    print(np.sum(blue.select), np.sum(red.select))
     travel = (1,)
-    
-    hblue = clump_horz(bright, travel)
-    vblue = clump_vert(bright, travel)
-    hdark = disperse_horz(dark, travel)
-    vdark = disperse_vert(dark, travel)
-    yield from zip_effects(hblue, vblue, hdark, vdark)
+    blue_up = slide_vert(blue, travel)
+    red_right = slide_horz(red, travel)
+    yield from zip_effects(img, blue_up, red_right)
 
 
 if __name__ == "__main__":
-    infile, outfile = sys.argv[1: 3]
-    img, metadata = read_img(infile, return_metadata=True)
-    frames = clump_dark(img)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("image", type=str, help="input image")
+    parser.add_argument("video", type=str, help="output video")
+    args = parser.parse_args()
+    img, metadata = read_img(args.image, return_metadata=True)
+    #frames = clump_dark(img)
+    frames = slide_colors(img)
     make_frame = frame_maker(frames)
     animation = VideoClip(make_frame, duration=60)
-    animation.write_videofile(outfile, fps=24, audio=False, threads=1,
+    animation.write_videofile(args.video, fps=24, audio=False, threads=1,
                               preset="ultrafast")
     imwrite("_{}_last.jpg".format("swirl"), img, metadata=metadata,
             opts={"quality": 100})
