@@ -68,7 +68,7 @@ def column_avgs(np.ndarray[np.uint8_t, ndim=2] select):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
-def move(
+def move_rubix(
         np.ndarray[np.uint8_t, ndim=3] img,
         np.ndarray[np.uint8_t, ndim=2] select,
         int travel):
@@ -78,14 +78,14 @@ def move(
         img = img[::-1]
         select = select[::-1]
         travel = -travel
-    move3d(img, travel)
-    move2d(select, travel)
+    move_rubix3d(img, travel)
+    move_rubix2d(select, travel)
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
-cpdef inline void move3d(np.ndarray[np.uint8_t, ndim=3] img, int travel):
+cpdef inline void move_rubix3d(np.ndarray[np.uint8_t, ndim=3] img, int travel):
     cdef int i, j, c, x
     cdef int cols = img.shape[0]
     cdef int rows = img.shape[1]
@@ -107,25 +107,11 @@ cpdef inline void move3d(np.ndarray[np.uint8_t, ndim=3] img, int travel):
             for c in range(chans):
                 img[j, i, c] = tail[j, i, c]
 
-
-@cython.boundscheck(False)
-@cython.wraparound(False)
-@cython.nonecheck(False)
-cpdef inline void move2d_many(
-        np.ndarray[np.uint8_t, ndim=3] img,
-        np.ndarray[np.int_t, ndim=1] cols_to_move,
-        int travel):
-    tails = np.empty((cols_to_move, travel), dtype=np.uint8)
-   # for i in range(cols_to_move.shape[0]):
-   #     tails[i] = make_tail_1d(
-        
-    return
-
  
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
-cpdef inline void move2d(np.ndarray[np.uint8_t, ndim=2] img, int travel):
+cpdef inline void move_rubix2d(np.ndarray[np.uint8_t, ndim=2] img, int travel):
     cdef int i, j, x 
     cdef int cols = img.shape[0]
     cdef int rows = img.shape[1]
@@ -144,30 +130,22 @@ cpdef inline void move2d(np.ndarray[np.uint8_t, ndim=2] img, int travel):
             img[j, i] = tail[j, i]
 
 
-#cpdef void move_3d_row(np.ndarray[np.uint8_t, ndim=2] img, int travel):
-#    cdef int i, c
-#    def cols = img.shape[0]
-#    def chans = img.shape[1]
-#    cpdef np.ndarray[np.uint8_t, ndim=2] tail
-#    tail = np.empty((travel, rows), dtype=np.uint8)
-#    for i in range(rows):
-#        for i in range(travel):
-#            tail[
-
-
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
-cpdef inline void move1d(np.ndarray[np.uint8_t, ndim=1] img, int travel):
-    cdef int i
+cpdef inline void move_swap2d(
+        np.ndarray[np.uint8_t, ndim=2] img,
+        np.ndarray[np.uint8_t, ndim=2] select,
+        int travel):
+    cdef int i, j, x 
     cdef int cols = img.shape[0]
-    cdef np.ndarray[np.uint8_t, ndim=1] tail
-    tail = np.empty((travel,), dtype=np.uint8)
-    for i in range(travel):
-        tail[i] = img[i + cols - travel]
-    for i in range(cols-1, travel-1, -1):
-        img[i] = img[i - travel]
-    for i in range(travel):
-        img[i] = tail[i]
+    cdef int rows = img.shape[1]
+    for i in range(rows):
+        for j in range(cols-1, -1, -1):
+            x = j - travel
+            if select[x, i] == 1:
+                img[j, i] = img[x, i]
+                select[j, i] = 1
+                select[x, i] = 0
 
- 
+
