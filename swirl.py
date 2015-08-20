@@ -16,7 +16,7 @@ from imread import imread, imwrite
 import numpy as np
 from moviepy.editor import VideoClip
 import nphusl
-from swirlop import chunk_select, column_avgs, move_rubix, move_swap
+from _swirlop import chunk_select, column_avgs, move_rubix, move_swap
 
 
 logging.basicConfig(level=logging.INFO)
