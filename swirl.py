@@ -391,6 +391,7 @@ if __name__ == "__main__":
                         choices=("ultrafast", "veryfast", "fast",))
     parser.add_argument("--fps", type=int, help="frames per second",
                         default=24)
+    parser.add_argument("--ffmpeg-threads", type=int, default=1)
     args = parser.parse_args()
     img, metadata = read_img(args.image, return_metadata=True)
 
@@ -400,7 +401,8 @@ if __name__ == "__main__":
     make_frame = frame_maker(frames)
     animation = VideoClip(make_frame, duration=args.duration)
     animation.write_videofile(args.video, fps=args.fps, audio=False,
-                              preset=args.compression, threads=1)
+                              preset=args.compression,
+                              threads=args.ffmpeg_threads)
     imwrite("_{}_last.jpg".format("swirl"), img, metadata=metadata,
             opts={"quality": 100})
 
