@@ -2,6 +2,7 @@ import imread
 import numpy as np
 import nphusl
 import swirl
+import swirlop
 
 
 def img():
@@ -59,7 +60,7 @@ def test_row_move():
     a = np.ndarray((100, 3), dtype=np.uint8)
     a[:] = 255
     a[:5] = 0
-    swirl.move(a, 2)
+    swirlop.move_rubix2d(a, 2)
     b = np.ndarray((100, 3), dtype=np.uint8)
     b[:] = 255
     b[2: 7] = 0
@@ -68,9 +69,12 @@ def test_row_move():
 
 def test_neg_row_move():    
     a = np.ndarray((100, 3), dtype=np.uint8)
+    s = np.ndarray((100, 3, 3), dtype=np.uint8)
     a[:] = 255
     a[:5] = 0
-    swirl.move(a, -2)
+    s[:] = 0
+    s[:5] = 255
+    swirlop.move_rubix(s, a, -2)
     b = np.ndarray((100, 3), dtype=np.uint8)
     b[:] = 255
     b[-2:] = 0
@@ -79,23 +83,25 @@ def test_neg_row_move():
 
 
 def test_bool_row_move():
-    a = np.ndarray((100, 3), dtype=np.bool)
+    a = np.ndarray((100, 3), dtype=np.uint8)
     a[:] = True
     a[:5] = False
-    swirl.move(a, 2)
-    b = np.ndarray((100, 3), dtype=np.bool)
+    swirlop.move_rubix2d(a, 2)
+    b = np.ndarray((100, 3), dtype=np.uint8)
     b[:] = True
     b[2: 7] = False
     assert np.all(a == b)
 
 
 def test_neg_bool_row_move():    
-    z = np.ndarray((100, 100, 3), dtype=np.bool)
+    s = np.ndarray((100, 100, 3), dtype=np.uint8)
+    s[:] = 1
+    z = np.ndarray((100, 100, 3), dtype=np.uint8)
     z[:] = True
     z[::, :5] = False
     
-    swirl.move(z[10, :], -2)
-    b = np.ndarray((100, 3), dtype=np.bool)
+    swirlop.move_rubix(s, z[10, :], -2)
+    b = np.ndarray((100, 3), dtype=np.uint8)
     b[:] = True
     b[-2:] = False
     b[:3] = False
