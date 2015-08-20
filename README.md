@@ -13,3 +13,7 @@ ways.
 1. Rubix method: shift a row/column of pixels with a wrap-around effect
 2. Swap method: move a selection by swapping their position with interfering pixels
 
+## Installation
+
+From source: `python setup.py build_ext --inplace`
+With pip: `pip install git+https:github.com/TadLeonard/swirly`
