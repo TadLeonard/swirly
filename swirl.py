@@ -16,7 +16,7 @@ from imread import imread, imwrite
 import numpy as np
 from moviepy.editor import VideoClip
 import nphusl
-from swirlop import chunk_select, column_avgs, move_rubix
+from swirlop import chunk_select, column_avgs, move_rubix, move_swap
 
 
 logging.basicConfig(level=logging.INFO)
@@ -118,18 +118,26 @@ def mover(transform, fn, *args, **kwargs):
     return transform(fn(*args, **kwargs))
 
 
-def move_chunks(moves):
+def move_chunks(move_fn, moves):
     for img, select, travel in moves:    
-        move_rubix(img, select, travel)
+        move_fn(img, select, travel)
 
 
-def move_chunks_back(moves):
+rubix_chunks = partial(move_chunks, move_rubix)
+swap_chunks = partial(move_chunks, move_swap)
+
+
+def move_chunks_back(move_fn, moves):
     backward_moves = ((a, b, -travel) for a, b, travel in moves)
-    return move_chunks(backward_moves)
+    return move_fn(backward_moves)
 
 
-move_forward = partial(mover, move_chunks)
-move_backward = partial(mover, move_chunks_back)
+move_forward_rubix = partial(mover, rubix_chunks)
+move_forward_swap = partial(mover, swap_chunks)
+move_backward_rubix = partial(
+    mover, partial(move_chunks_back, move_forward_rubix))
+move_backward_swap = partial(
+    mover, partial(move_chunks_back, move_forward_swap))
 
 
 imgmask = namedtuple("img", ["img", "select"])
@@ -188,10 +196,10 @@ def _gen_contiguous_moves(masked_img, travels, cols, moves):
             yield img[:, start: stop], select[:, start: stop], travel
 
 
-clump = partial(move_forward, clump_cols)
+clump = partial(move_forward_rubix, clump_cols)
 clump_vert = partial(run_forever, clump)
 clump_horz = flipped(clump_vert)
-disperse = partial(move_backward, clump_cols)
+disperse = partial(move_backward_rubix, clump_cols)
 disperse_vert = partial(run_forever, disperse)
 disperse_horz = flipped(disperse_vert)
 
@@ -224,7 +232,7 @@ def slide_cols(masked_img, moves):
     yield from _gen_contiguous_moves(masked_img, travels, cols, moves)
 
 
-slide = partial(move_backward, slide_cols)
+slide = partial(move_backward_swap, slide_cols)
 slide_vert = partial(run_forever, slide)
 slide_horz = flipped(slide_vert)
 
@@ -363,28 +371,36 @@ def select_ranges(select_by, percentile, *extra_filters):
 def slide_colors(img):
     hsl = nphusl.to_husl(img)
     H, L = hsl[..., 0], hsl[..., 2]
-    light = L > 3
+    light = mask(L > 3)
     blue = mask(img, light, H > 240, H < 290)
     red = mask(img, light, _or(H < 40, H > 320))
-    print(np.sum(blue.select), np.sum(red.select))
-    travel = (1,)
+    travel = (4,)
     blue_up = slide_vert(blue, travel)
     red_right = slide_horz(red, travel)
-    yield from zip_effects(img, blue_up, red_right)
+    #yield from zip_effects(img, blue_up, red_right)
+    light_right = slide_horz(mask(light), travel)
+    yield from zip_effects(img, light_right)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("image", type=str, help="input image")
     parser.add_argument("video", type=str, help="output video")
+    parser.add_argument("-d", "--duration", type=float, default=3.0)
+    parser.add_argument("--compression", default="veryfast",
+                        choices=("ultrafast", "veryfast", "fast",))
+    parser.add_argument("--fps", type=int, help="frames per second",
+                        default=24)
     args = parser.parse_args()
     img, metadata = read_img(args.image, return_metadata=True)
-    #frames = clump_dark(img)
-    frames = slide_colors(img)
+
+    frames = clump_dark(img)
+    #frames = slide_colors(img)
+
     make_frame = frame_maker(frames)
-    animation = VideoClip(make_frame, duration=60)
-    animation.write_videofile(args.video, fps=24, audio=False, threads=1,
-                              preset="ultrafast")
+    animation = VideoClip(make_frame, duration=args.duration)
+    animation.write_videofile(args.video, fps=args.fps, audio=False,
+                              preset=args.compression, threads=1)
     imwrite("_{}_last.jpg".format("swirl"), img, metadata=metadata,
             opts={"quality": 100})
 
