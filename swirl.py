@@ -20,6 +20,7 @@ from swirlop import chunk_select, column_avgs, move_rubix, move_swap
 
 
 logging.basicConfig(level=logging.INFO)
+__version__ = "0.1.0"
 
 
 ###################

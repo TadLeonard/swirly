@@ -2,6 +2,7 @@ import numpy
 from distutils.core import setup
 from distutils.extension import Extension
 from Cython.Distutils import build_ext
+import swirl
 
 
 ext_module = Extension(
@@ -14,7 +15,9 @@ ext_module = Extension(
 
 
 setup(
-    name = 'swirlop cython extensions',
-    cmdclass = {'build_ext': build_ext},
-    ext_modules = [ext_module],
+    name='swirl',
+    version=swirl.__version__,
+    py_modules=["swirl"],
+    cmdclass={'build_ext': build_ext},
+    ext_modules=[ext_module],
 )
