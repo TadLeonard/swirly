@@ -16,6 +16,7 @@ from imread import imread, imwrite
 import numpy as np
 from moviepy.editor import VideoClip
 import nphusl
+
 from _swirlop import chunk_select, column_avgs, move_rubix, move_swap
 
 
@@ -25,59 +26,6 @@ __version__ = "0.2.0"
 
 ###################
 # Filtering pixels
-
-
-_props = namedtuple("channel", "h s l")
-
-
-def hsl_filter(h=(), s=(), l=()):
-    """Returns a namedtuple of properties that are used to find
-    'channels' of a certain hue, saturation, and/or lightness in an image.
-    If the user wants to filter for light rows/columns of pixels, they might
-    use `hsl_filter(l=[90.5, 99.0])."""
-    h, s, l = (tuple(p) for p in [h, s, l])  # let's make them all tuples
-
-    # let's make sure the user has specified (min, max) for HSL
-    if any(len(p) not in (0, 2) for p in (h, s, l)):
-        raise ValueError("HSL filters can only be tuples like (min, max)")
-
-    # let's make sure min, max values fit within their appropriate range
-    if h:
-        h = _valid_h(*h)
-    if s:
-        s = _valid_s(*s)
-    if l:
-        l = _valid_l(*l)
-
-    return _props(h, s, l)
-
-
-def _valid_h(hmin, hmax):
-    return (max(hmin, 0), max(hmax, 0))
-
-
-def _valid_s(smin, smax):
-    return (min(max(smin, 0), 100),
-            min(max(smax, 0), 100))
-
-
-_valid_l = _valid_s  # saturation has the same range as lightness
-
-
-def get_channel(img, filter_hsl, avg_husl):
-    """Returns row indices for which the HSL filter constraints are met"""
-    idx_select = np.ones(img.shape[0], dtype=np.bool)  # no "rows" selected initially
-    for prop_idx, prop in enumerate(filter_hsl):
-        if not prop:
-            continue
-        pmin, pmax = prop
-        avg = avg_husl[:, prop_idx]
-        # add/subtract 0.1 for convenient comparison of numpy arrays of floats
-        # i.e. we want 100 to be not < 100.0000000000023
-        idx_select[avg < (pmin - 0.1)] = 0
-        idx_select[avg > (pmax + 0.1)] = 0
-    return idx_select
-
 
 _or = np.logical_or
 _and = np.logical_and
@@ -94,6 +42,11 @@ def _choose(chooser, starter, img, *selections):
 
 mask = partial(_choose, np.logical_and, np.ones)
 mask_or = partial(_choose, np.logical_or, np.zeros)
+
+
+# This namedtuple holds a 3D of the image itself and a 2D array of the
+# selected pixels. It gets passed around to effect functions.
+imgmask = namedtuple("img", ["img", "select"])
 
 
 ################
@@ -139,9 +92,6 @@ move_backward_rubix = partial(
     mover, partial(move_chunks_back, move_forward_rubix))
 move_backward_swap = partial(
     mover, partial(move_chunks_back, move_forward_swap))
-
-
-imgmask = namedtuple("img", ["img", "select"])
 
 
 def clump_cols(masked_img, moves):
