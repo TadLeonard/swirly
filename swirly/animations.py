@@ -1,6 +1,8 @@
 """The final product. A combination of effect generators,
 image masks, and movers are used to create frame generators."""
 
+from abc import abstractmethod, ABCMeta
+
 import numpy as np
 import nphusl
 
@@ -8,12 +10,122 @@ from . import movers
 from . import effects
 
 
-clump = partial(move_forward_rubix, clump_cols)
-clump_vert = partial(run_forever, clump)
-clump_horz = flipped(clump_vert)
-disperse = partial(move_backward_rubix, clump_cols)
-disperse_vert = partial(run_forever, disperse)
-disperse_horz = flipped(disperse_vert)
+###################################
+# Effects coupled with pixel movers
+
+
+no_op = lambda x: x
+_view = namedtuple("_view", ["masked_view", "frame"])
+
+
+def view(masked_img, prepare_img=no_op):
+    frame = masked_img.img
+    prepared = prepare_img(masked_img)
+    return _view(prepared, frame)
+    
+
+def effect(suggest_moves=no_op, prepare_moves=no_op):
+    def _prepare_effect(masked_view, move_magnitudes):
+        suggested_moves = suggest_moves(masked_view, move_magnitudes)
+        return prepare_moves(suggested_moves)
+    return _prepare_effect
+
+
+class Animation(metaclass=ABCMeta):
+
+    def __init__(self, view, effect, move_magnitudes):
+        self.view = view
+        self.masked_view = view.masked_view
+        self.effect = effect
+        self.move_magnitudes = move_magnitudes
+        assert all(m > 0 for m in move_magnitudes), "positive magnitudes only"
+
+    def make_frame(self, time):
+        self.move_chunks()
+        return self.view.frame
+
+    def move_chunks(self):
+        effected_chunks = self.effect(self.masked_view, self.move_magnitudes)
+        for img, select, travel in effected_chunks:
+            self.move(img, select, travel) 
+
+    @abstractmethod
+    def move(self, img, select, travel): ...
+    
+
+# Concrete animations
+
+class RubixAnimation(Animation):
+    move = move_rubix
+
+class SwapAnimation(Animation):
+    move = move_swap
+
+
+# Preparer functions for views and effects
+
+def reverse(chunks):
+    return ((i, s, -travel) for i, s, travel in chunks)
+
+def flip(masked_img):
+    img, select = masked_img
+    rotated = imgmask(np.rot90(img), np.rot90(select))
+    return rotated
+
+
+# Specific views, effects, & animations for end user
+
+flipped_view = partial(view, prepare_img=flip)
+clump_effect = partial(effect, clump_cols)
+disperse_effect = partial(clump_effect, prepare_moves=reverse)
+
+
+def make_animation(masked_img, move_magnitudes,
+                   view=view, effect=effect,
+                   animation=RubixAnimation):
+    _view = view(masked_img)
+    _effect = effect()
+    _animation = animation(_view, _effect, move_magnitudes)
+    return _animation
+
+
+# Complete animation makers
+
+slide_vert = partial(make_animation, animation=SwapAnimation)
+slide_horz = partial(slide_vert, view=flipped_view)
+rubix_vert = partial(make_animation, animation=RubixAnimation)
+rubix_horz = partial(rubix_vert, view=flipped_view)
+
+clump_vert = partial(rubix_vert, effect=clump_effect)
+clump_horz = partial(rubix_horz, effect=clump_effect)
+
+disperse_vert = partial(rubix_vert, effect=disperse_effect)
+disperse_horz = partial(disperse_vert, view=flipped_view)
+
+
+###################
+# Filtering pixels
+
+_or = np.logical_or
+_and = np.logical_and
+
+
+def _choose(chooser, starter, img, *selections):
+    sel = starter(selections[0].shape[:2], dtype=np.bool)
+    for sub_select in selections:
+        if isinstance(sub_select, imgmask):
+            sub_select = sub_select.select
+        sel = chooser(sel, sub_select)
+    return imgmask(img, sel.astype(np.uint8))
+
+
+mask = partial(_choose, np.logical_and, np.ones)
+mask_or = partial(_choose, np.logical_or, np.zeros)
+
+
+# This namedtuple holds a 3D of the image itself and a 2D array of the
+# selected pixels. It gets passed around to effect functions.
+imgmask = namedtuple("img", ["img", "select"])
 
 
 def clump_dark(img):
