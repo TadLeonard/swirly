@@ -25,8 +25,8 @@ def main():
     args = parser.parse_args()
     img, metadata = read_img(args.image, return_metadata=True)
 
-    frames = effects.clump_dark(img)
-    #frames = slide_colors(img)
+    frames = animations.clump_dark(img)
+    #frames = animations.slide_colors(img)
 
     make_frame = frame_maker(frames)
     animation = VideoClip(make_frame, duration=args.duration)
@@ -54,11 +54,5 @@ def read_img(path, return_metadata=False):
         return img, metadata
     else:
         return img
-
-
-def frame_maker(effects):
-    def make(_):
-        return next(effects)
-    return make
 
 
