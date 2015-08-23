@@ -7,42 +7,16 @@ import numpy as np
 from _swirlop import chunk_select, column_avgs, move_rubix, move_swap
 
 
-###################
-# Filtering pixels
-
-_or = np.logical_or
-_and = np.logical_and
-
-
-def _choose(chooser, starter, img, *selections):
-    sel = starter(selections[0].shape[:2], dtype=np.bool)
-    for sub_select in selections:
-        if isinstance(sub_select, imgmask):
-            sub_select = sub_select.select
-        sel = chooser(sel, sub_select)
-    return imgmask(img, sel.astype(np.uint8))
-
-
-mask = partial(_choose, np.logical_and, np.ones)
-mask_or = partial(_choose, np.logical_or, np.zeros)
-
-
-# This namedtuple holds a 3D of the image itself and a 2D array of the
-# selected pixels. It gets passed around to effect functions.
-imgmask = namedtuple("img", ["img", "select"])
-
-
 ################
 # Moving pixels
 
+no_op = lambda x: x
 
-def flipped(fn):
-    def wrapper(masked_img, *args, **kwargs):
-        img, select = masked_img
-        _rotated = imgmask(np.rot90(img), np.rot90(select))
-        for _ in fn(_rotated, *args, **kwargs):
-            yield img
-    return wrapper
+
+def mover(fn, masked_img, *args, **kwargs):
+    def move(*args, **kwargs):
+        return fn(masked_img, *args, **kwargs)
+    return move
 
 
 def run_forever(fn, masked_img, *args, **kwargs):
