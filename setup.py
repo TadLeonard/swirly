@@ -17,14 +17,8 @@ ext_module = Extension(
 setup(
     name="swirl",
     version=__version__,
+    scripts=["swirl.py"], 
     packages=["swirly"],
     cmdclass={"build_ext": build_ext},
     ext_modules=[ext_module],
-    entry_points={
-        'console_scripts': [
-            'swirl = swirly.cli:main',
-        ],
-        'gui_scripts': [
-        ]
-    }
 )
