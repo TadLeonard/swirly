@@ -6,15 +6,10 @@ import numpy as np
 import nphusl
 
 
-def flipped(fn):
-    """Change an effect generator so that it operates on a version
-    of the image and mask that are rotated 90 degrees"""
-    def wrapper(masked_img, *args, **kwargs):
-        img, select = masked_img
-        _rotated = imgmask(np.rot90(img), np.rot90(select))
-        for _ in fn(_rotated, *args, **kwargs):
-            yield img
-    return wrapper
+def slide_cols(masked_img, moves):
+    cols = np.nonzero(np.any(masked_img.select, axis=1))[0]
+    travels = np.random.choice(moves, cols.size)
+    yield from _gen_contiguous_moves(masked_img, travels, cols, moves)
 
 
 def clump_cols(masked_img, moves):
@@ -61,7 +56,7 @@ def _travel_direction(stopped, travels, cols):
 
 def _gen_contiguous_moves(masked_img, travels, cols, moves):
     img, select = masked_img
-    all_travels = set(-m for m in moves) | set(moves) | set((1, -1))
+    all_travels = set(-m for m in moves) | set(moves) | {1, -1}
     for travel in all_travels:
         cols_to_move = cols[travels == travel]
         if not cols_to_move.size:
@@ -70,16 +65,11 @@ def _gen_contiguous_moves(masked_img, travels, cols, moves):
             yield img[:, start: stop], select[:, start: stop], travel
 
 
-def fuzz_horz(masked_img, moves=(0, 1)):
-    moves = tuple(moves)
-    fuzz_moves = tuple(-m for m in moves if m) + moves
-    while True:
+def fuzz_horz(masked_img, move_magnitudes=(0, 1)):
+    fuzz_moves = set(move_magnitudes) | {-m for m in move_magnitudes}
         rows = np.nonzero(np.any(masked_img.select, axis=1))[0]
         fuzz_rows(masked_img, rows, fuzz_moves) 
         yield masked_img.img
-
-
-fuzz_vert = flipped(fuzz_horz)
 
 
 def fuzz_rows(masked_img, rows, moves):
@@ -91,6 +81,3 @@ def fuzz_rows(masked_img, rows, moves):
         move_rubix(img[row, :], travel)
         move_rubix(select[row, :], travel)
 
-
-clump_vert = clump_cols
-clump_horz = flipped(clump_vert)
