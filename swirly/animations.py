@@ -3,10 +3,11 @@ from functools import partial
 
 from . import animate
 from . import effects
-from .animate import interleave_effects, zip_effects
+from .animate import Group
 from .animate import make_view, make_effect, make_animation
 
 import numpy as np
+import nphusl
 
 
 ### Filtering pixels
@@ -66,7 +67,7 @@ def clump_dark(img):
     travel = (5,)
     vert = clump_vert(dark, travel)
     horz = clump_horz(dark, travel)
-    yield from zip_effects(img, horz, vert)
+    return Group(img, vert, horz).zip()
 
 
 def disperse_light(img):
@@ -78,7 +79,7 @@ def disperse_light(img):
     travel = (1,)
     vert = disperse_vert(img, light, travel)
     horz = disperse_horz(img, light, travel)
-    yield from zip_effects(img, horz, vert)
+    return Group(img, horz, vert).zip()
 
 
 def clump_hues(img):
@@ -91,7 +92,7 @@ def clump_hues(img):
         for selection in _select_ranges(H, 50, light):
             yield clump_vert(selection, travel)
 
-    yield from zip_effects(img, *effects())
+    return Group(img, *effects()).zip()
 
 
 def _select_ranges(select_by, percentile, *extra_filters):
@@ -116,5 +117,6 @@ def slide_colors(img):
     blue_up = slide_vert(blue, travel)
     red_right = slide_horz(red, travel)
     light_right = slide_horz(light, travel)
-    yield from zip_effects(img, light_right)
+    return Group(img, light_right).zip()
+
 

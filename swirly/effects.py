@@ -5,6 +5,8 @@ import random
 import numpy as np
 import nphusl
 
+from _swirlop import column_avgs, chunk_select
+
 
 def slide_cols(masked_img, moves):
     cols = np.nonzero(np.any(masked_img.select, axis=1))[0]
