@@ -2,32 +2,40 @@
 image masks, and movers are used to create frame generators."""
 
 from abc import abstractmethod, ABCMeta
-from functools import partial
+from collections import namedtuple
+from functools import wraps
 
-import numpy as np
-import nphusl
-
-from . import movers
-from . import effects
+from . import _swirlop
 
 
 no_op = lambda x: x
 _view = namedtuple("_view", ["masked_view", "frame"])
 
 
-def view(masked_img, prepare_img=no_op):
+def make_view(masked_img, prepare_img=no_op):
     frame = masked_img.img
     prepared = prepare_img(masked_img)
     return _view(prepared, frame)
-    
+   
 
-def effect(suggest_moves=no_op, prepare_moves=no_op):
+def make_effect(suggest_moves=no_op, prepare_moves=no_op):
     def _prepare_effect(masked_view, move_magnitudes):
         suggested_moves = suggest_moves(masked_view, move_magnitudes)
         return prepare_moves(suggested_moves)
     return _prepare_effect
 
 
+def make_animation(masked_img, move_magnitudes,
+                   view=make_view, effect=make_effect,
+                   animation=None):
+    if animation is None:
+        raise NotImplementedError("No animation type specified")
+    _view = view(masked_img)
+    _effect = effect()
+    _animation = animation(_view, _effect, move_magnitudes)
+    return _animation
+
+ 
 class Animation(metaclass=ABCMeta):
 
     def __init__(self, view, effect, move_magnitudes):
@@ -53,55 +61,14 @@ class Animation(metaclass=ABCMeta):
 ### Concrete animations
 
 class RubixAnimation(Animation):
-    move = move_rubix
+    move = _swirlop.move_rubix
+
 
 class SwapAnimation(Animation):
-    move = move_swap
-
-
-### Preparer functions for views, effects, and animations
-
-def reverse(chunks):
-    return ((i, s, -travel) for i, s, travel in chunks)
-
-
-def flip(masked_img):
-    img, select = masked_img
-    rotated = imgmask(np.rot90(img), np.rot90(select))
-    return rotated
-
-
-def make_animation(masked_img, move_magnitudes,
-                   view=view, effect=effect,
-                   animation=RubixAnimation):
-    _view = view(masked_img)
-    _effect = effect()
-    _animation = animation(_view, _effect, move_magnitudes)
-    return _animation
-
-
-### Filtering pixels
-
-# This namedtuple holds a 3D of the image itself and a 2D array of the
-# selected pixels. It gets passed around to effect functions.
-imgmask = namedtuple("img", ["img", "select"])
-
-
-def _choose(chooser, starter, img, *selections):
-    sel = starter(selections[0].shape[:2], dtype=np.bool)
-    for sub_select in selections:
-        if isinstance(sub_select, imgmask):
-            sub_select = sub_select.select
-        sel = chooser(sel, sub_select)
-    return imgmask(img, sel.astype(np.uint8))
-
-
-mask = partial(_choose, np.logical_and, np.ones)
-mask_or = partial(_choose, np.logical_or, np.zeros)
+    move = _swirlop.move_swap
 
 
 ### Merging multiple effects into a single animation
-
 
 def handle_kb_interrupt(fn):
     @wraps(fn)

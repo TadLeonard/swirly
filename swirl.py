@@ -6,7 +6,7 @@ from imread import imread, imwrite
 from moviepy.editor import VideoClip
 import numpy as np
 
-from . import effects
+from swirly import animations
 
 
 logging.basicConfig(level=logging.INFO)
@@ -56,3 +56,5 @@ def read_img(path, return_metadata=False):
         return img
 
 
+if __name__ == "__main__":
+    main()

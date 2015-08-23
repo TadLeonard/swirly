@@ -1,24 +1,48 @@
+from collections import namedtuple
 from functools import partial
 
 from . import animate
+from . import effects
 from .animate import interleave_effects, zip_effects
-from .animate import view, effect, make_animation
-from .animate import mask, mask_or
+from .animate import make_view, make_effect, make_animation
 
 import numpy as np
 
 
+### Filtering pixels
+
+def _choose(chooser, starter, img, *selections):
+    sel = starter(selections[0].shape[:2], dtype=np.bool)
+    for sub_select in selections:
+        if isinstance(sub_select, imgmask):
+            sub_select = sub_select.select
+        sel = chooser(sel, sub_select)
+    return imgmask(img, sel.astype(np.uint8))
+
+
+imgmask = namedtuple("img", ["img", "select"])
 _or, _and = np.logical_or, np.logical_and
+mask = partial(_choose, _and, np.ones)
+mask_or = partial(_choose, _or, np.zeros)
 
 
-# Specific views, effects, & animations for end user
+### Preparer functions for views, effects, and animations
 
-flipped_view = partial(view, prepare_img=flip)
-clump_effect = partial(effect, clump_cols)
+def reverse(chunks):
+    return ((i, s, -travel) for i, s, travel in chunks)
+
+
+def flip(masked_img):
+    img, select = masked_img
+    rotated = imgmask(np.rot90(img), np.rot90(select))
+    return rotated
+
+
+### Specific views, effects, & animations for end user
+
+flipped_view = partial(make_view, prepare_img=flip)
+clump_effect = partial(make_effect, effects.clump_cols)
 disperse_effect = partial(clump_effect, prepare_moves=reverse)
-
-
-# Complete animation makers
 
 slide_vert = partial(make_animation, animation=animate.SwapAnimation)
 slide_horz = partial(slide_vert, view=flipped_view)
@@ -31,6 +55,9 @@ clump_horz = partial(rubix_horz, effect=clump_effect)
 disperse_vert = partial(rubix_vert, effect=disperse_effect)
 disperse_horz = partial(disperse_vert, view=flipped_view)
 
+
+### Complete animations
+### These are the "end products"
 
 def clump_dark(img):
     hsl = nphusl.to_husl(img)
@@ -61,13 +88,13 @@ def clump_hues(img):
     travel = (1,)
     
     def effects():
-        for selection in select_ranges(H, 50, light):
+        for selection in _select_ranges(H, 50, light):
             yield clump_vert(selection, travel)
 
     yield from zip_effects(img, *effects())
 
 
-def select_ranges(select_by, percentile, *extra_filters):
+def _select_ranges(select_by, percentile, *extra_filters):
     selectable = mask(img, *extra_filters) 
     selectable_values = select_by[selectable.select]
     min_val = 0

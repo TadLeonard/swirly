@@ -67,17 +67,8 @@ def _gen_contiguous_moves(masked_img, travels, cols, moves):
 
 def fuzz_horz(masked_img, move_magnitudes=(0, 1)):
     fuzz_moves = set(move_magnitudes) | {-m for m in move_magnitudes}
-        rows = np.nonzero(np.any(masked_img.select, axis=1))[0]
-        fuzz_rows(masked_img, rows, fuzz_moves) 
-        yield masked_img.img
-
-
-def fuzz_rows(masked_img, rows, moves):
-    travels = np.random.choice(moves, len(rows))
-    img, select = masked_img
-    for row, travel in zip(rows, travels):
-        if not travel:
-            continue
-        move_rubix(img[row, :], travel)
-        move_rubix(select[row, :], travel)
+    rows = np.nonzero(np.any(masked_img.select, axis=1))[0]
+    travels = np.random.choice(moves, rows.size)
+    chunks = _gen_contiguous_moves(masked_img, travels, rows, move_magnitudes)
+    yield from chunks
 
