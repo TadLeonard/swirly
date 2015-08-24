@@ -9,17 +9,25 @@ import random
 from . import _swirlop
 
 
-no_op = lambda x: x
+def noop_effect(masked_img, moves):
+    img, select = masked_img
+    yield img, select, moves[0]
+
+
+def noop_prepare(thing_to_prepare):
+    return thing_to_prepare
+
+
 _view = namedtuple("_view", ["masked_view", "frame"])
 
 
-def make_view(masked_img, prepare_img=no_op):
+def make_view(masked_img, prepare_img=noop_prepare):
     frame = masked_img.img
     prepared = prepare_img(masked_img)
     return _view(prepared, frame)
    
 
-def make_effect(suggest_moves=no_op, prepare_moves=no_op):
+def make_effect(suggest_moves=noop_effect, prepare_moves=noop_prepare):
     def _prepare_effect(masked_view, move_magnitudes):
         suggested_moves = suggest_moves(masked_view, move_magnitudes)
         return prepare_moves(suggested_moves)

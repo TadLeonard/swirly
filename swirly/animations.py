@@ -13,15 +13,17 @@ import nphusl
 ### Filtering pixels
 
 def _choose(chooser, starter, img, *selections):
+    if not selections:
+        raise Exception("No selections given")
+    selections = tuple(s.select if isinstance(s, imgmask) else s
+                       for s in selections)
     sel = starter(selections[0].shape[:2], dtype=np.bool)
     for sub_select in selections:
-        if isinstance(sub_select, imgmask):
-            sub_select = sub_select.select
         sel = chooser(sel, sub_select)
     return imgmask(img, sel.astype(np.uint8))
 
 
-imgmask = namedtuple("img", ["img", "select"])
+imgmask = namedtuple("imgmask", ["img", "select"])
 _or, _and = np.logical_or, np.logical_and
 mask = partial(_choose, _and, np.ones)
 mask_or = partial(_choose, _or, np.zeros)
@@ -110,7 +112,7 @@ def _select_ranges(select_by, percentile, *extra_filters):
 def slide_colors(img):
     hsl = nphusl.to_husl(img)
     H, L = hsl[..., 0], hsl[..., 2]
-    light = mask(L > 3)
+    light = mask(img, L > 4)
     blue = mask(img, light, H > 240, H < 290)
     red = mask(img, light, _or(H < 40, H > 320))
     travel = (4,)

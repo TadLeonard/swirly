@@ -26,7 +26,7 @@ def main():
     img, metadata = read_img(args.image, return_metadata=True)
 
     make_frame = animations.clump_dark(img)
-    #make_frame = animations.slide_colors(img)
+    make_frame = animations.slide_colors(img)
 
     animation = VideoClip(make_frame, duration=args.duration)
     animation.write_videofile(args.video, fps=args.fps, audio=False,
