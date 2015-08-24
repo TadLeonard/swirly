@@ -6,7 +6,7 @@ from swirly.version import __version__
 
 
 ext_module = Extension(
-    "_swirlop",
+    "swirly/_swirlop",
     ["swirly/_swirlop.pyx"],
     include_dirs=[numpy.get_include()],
     #extra_compile_args=["-fopenmp"],
