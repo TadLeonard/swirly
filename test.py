@@ -1,6 +1,6 @@
 import numpy as np
 import nphusl
-import _swirlop
+from swirly import _swirlop
 
 
 
