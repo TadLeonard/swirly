@@ -14,7 +14,7 @@ import nphusl
 
 def _choose(chooser, starter, img, *selections):
     if not selections:
-        raise Exception("No selections given")
+        return imgmask(img, np.ones(img.shape, dtype=np.uint8))
     selections = tuple(s.select if isinstance(s, imgmask) else s
                        for s in selections)
     sel = starter(selections[0].shape[:2], dtype=np.bool)
@@ -64,20 +64,37 @@ disperse_horz = partial(disperse_vert, view=flipped_view)
 
 def clump_dark(img):
     hsl = nphusl.to_husl(img)
-    H, _, L = (hsl[..., n] for n in range(3))
+    H, L = hsl[..., 0], hsl[..., 2]
     dark = mask(img, L < 5)
     travel = (5,)
     vert = clump_vert(dark, travel)
     horz = clump_horz(dark, travel)
-    return Group(img, vert, horz).zip()
+    return Group(img, vert, horz).zip(effects_per_frame=5)
+
+
+def clump_gradient(img):
+    hsl = nphusl.to_husl(img)
+    H, L = hsl[..., 0], hsl[..., 2]
+    dark = mask(img, L < 5)
+    travel = (5,)
+    ranges = list(range(1, 5))
+    
+    def effects(ranges):
+        min_L = ranges[0]
+        for max_L in ranges[1:]:
+            m = mask(img, L < max_L, L > min_L)
+            yield clump_vert(m, travel)
+            yield clump_horz(m, travel)
+            min_L = max_L
+
+    effs = effects(ranges)
+    return Group(img, *effs).zip(effects_per_frame=5)
 
 
 def disperse_light(img):
     hsl = nphusl.to_husl(img)
-    H, _, L = (hsl[..., n] for n in range(3))
+    H, L = hsl[..., 0], hsl[..., 2]
     light = mask(img, L > 80)
-    logging.info("Selection ratio: {:1.1f}%".format(
-                 100 * np.count_nonzero(light) / light.size))
     travel = (1,)
     vert = disperse_vert(img, light, travel)
     horz = disperse_horz(img, light, travel)
@@ -86,19 +103,15 @@ def disperse_light(img):
 
 def clump_hues(img):
     hsl = nphusl.to_husl(img)
-    H, _, L = (hsl[..., n] for n in range(3))
+    H, L = hsl[..., 0], hsl[..., 2]
     light = mask(img, L > 1)
     travel = (1,)
-    
-    def effects():
-        for selection in _select_ranges(H, 50, light):
-            yield clump_vert(selection, travel)
-
+    effects = (clump_vert(s, travel) for s in _select_ranges(H, 50, light))
     return Group(img, *effects()).zip()
 
 
 def _select_ranges(select_by, percentile, *extra_filters):
-    selectable = mask(img, *extra_filters) 
+    selectable = mask(select_by, *extra_filters) 
     selectable_values = select_by[selectable.select]
     min_val = 0
     for max_pct in range(percentile, 100 + percentile, percentile):

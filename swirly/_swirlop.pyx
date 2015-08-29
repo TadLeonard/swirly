@@ -85,6 +85,24 @@ def move_rubix(
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
+def move_rubix_multimask(
+        np.ndarray[np.uint8_t, ndim=3] img,
+        int travel,
+        select):
+    """Moves slices of an image's columns in a certain direction
+    by `select` steps. Moves the 2D boolean selection mask along with it."""
+    if travel < 0:
+        img = img[::-1]
+        select = select[::-1]
+        travel = -travel
+    move_rubix3d(img, travel)
+    for s in select:
+        move_rubix2d(s, travel)
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.nonecheck(False)
 cpdef inline void move_rubix3d(np.ndarray[np.uint8_t, ndim=3] img, int travel):
     cdef int i, j, c, x
     cdef int cols = img.shape[0]
@@ -130,10 +148,42 @@ cpdef inline void move_rubix2d(np.ndarray[np.uint8_t, ndim=2] img, int travel):
             img[j, i] = tail[j, i]
 
 
-#@cython.boundscheck(False)
+@cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
 cpdef inline void move_swap(
+        np.ndarray[np.uint8_t, ndim=3] img,
+        np.ndarray[np.uint8_t, ndim=2] select,
+        int travel):
+    if travel < 0:
+        img = img[::-1]
+        select = select[::-1]
+        travel = -travel
+
+    cdef int s_temp, i_temp
+    cdef int i, j, x, c
+    cdef int cols = img.shape[0]
+    cdef int rows = img.shape[1]
+    cdef int chans = img.shape[2]
+
+    for i in range(rows):
+        for j in range(cols-1, travel-1, -1):
+            x = j - travel
+            if select[x, i] == 1:
+                s_temp = select[j, i]
+                select[j, i] = 1
+                select[x, i] = s_temp
+                for c in range(chans):
+                    i_temp = img[j, i, c]
+                    img[j, i, c] = img[x, i, c]
+                    img[x, i, c] = i_temp
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.nonecheck(False)
+cpdef inline void move_fill(
+    """Move until empty space is filled"""
         np.ndarray[np.uint8_t, ndim=3] img,
         np.ndarray[np.uint8_t, ndim=2] select,
         int travel):
