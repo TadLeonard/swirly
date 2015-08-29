@@ -68,13 +68,15 @@ class Animation(metaclass=ABCMeta):
             self.move(img, select, travel) 
 
     @abstractmethod
-    def move(self, img, select, travel): ...
+    def move(self, img, travel, masks): ...
     
 
 ### Concrete animations
 
 class RubixAnimation(Animation):
-    move = _swirlop.move_rubix
+    #move = _swirlop.move_rubix
+    move = _swirlop.move_rubix_multimask
+    
 
 
 class SwapAnimation(Animation):
@@ -99,8 +101,8 @@ class Group:
         self.initial_img = initial_img
         self.animations = animations
 
-    def zip(self):
-        iterator = self._zip()
+    def zip(self, effects_per_frame=1):
+        iterator = self._zip(effects_per_frame)
         def make_frame(_):
             return next(iterator)
         return make_frame
@@ -112,11 +114,14 @@ class Group:
         return make_frame
 
     @handle_kb_interrupt
-    def _zip(self):
+    def _zip(self, effects_per_frame):
         yield self.initial_img
+        count = 0
         while True:
             for imgs in zip(*self.animations):
-                yield imgs[-1]
+                count += 1
+                if not count % effects_per_frame:
+                    yield imgs[-1]
 
     @handle_kb_interrupt
     def _interleave(self, repeats, effects_per_frame, rand):
